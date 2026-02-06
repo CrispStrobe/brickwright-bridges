@@ -1677,7 +1677,7 @@ async def async_main(args):
 ║                                                                       ║
 ║        Universal LEGO Bridge                                          ║
 ║                                                                       ║
-║  🔧 Multi-Device  •  🔄 Auto-Reconnect  •  🔥 Hot-Swap  •  📊 JSON     ║
+║  🔧 Multi-Device  •  🔄 Auto-Reconnect  •  🔥 Hot-Swap  •  📊 JSON    ║
 ║                                                                       ║
 ╚═══════════════════════════════════════════════════════════════════════╝
     """)
