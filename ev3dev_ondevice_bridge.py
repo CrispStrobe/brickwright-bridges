@@ -851,41 +851,44 @@ def safe_motor_command(motor, command_func, error_msg="Motor operation failed"):
 
 
 # ============================================================================
-# HTTP HANDLER (keep existing + add script management endpoints)
+# HTTP HANDLER
 # ============================================================================
-
 
 class BridgeHandler(http.server.BaseHTTPRequestHandler):
 
     def log_message(self, format, *args):
-        log(
-            "HTTP {0} {1} from {2}".format(
-                self.command, self.path, self.client_address[0]
+        """Only log HTTP requests if verbose mode enabled"""
+        if VERBOSE:
+            log(
+                "HTTP {0} {1} from {2}".format(
+                    self.command, self.path, self.client_address[0]
+                )
             )
-        )
+
+    def end_headers(self):
+        """Add CORS headers for browser compatibility"""
+        # Allow all origins (restrict in production!)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, DELETE')
+        self.send_header('Access-Control-Max-Age', '3600')
+        super().end_headers()
 
     def _send_json(self, data, code=200):
         """Send JSON response"""
         vlog("Sending response", {"code": code, "data": data})
-        self.send_response(code)
-        self.send_header("Content-type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header(
-            "Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"
-        )
-        self.send_header("Access-Control-Allow-Headers", "*")
-        self.end_headers()
-        self.wfile.write(json.dumps(data).encode())
+        
+        self.send_response(code)           # 1. Set status (200, 404, etc)
+        self.send_header("Content-type", "application/json")  # 2. Set content type
+        # Note: CORS headers are added by end_headers() automatically
+        self.end_headers()                 # 3. Send all headers (calls our override)
+        
+        self.wfile.write(json.dumps(data).encode())  # 4. Send body
 
     def do_OPTIONS(self):
-        """Handle CORS preflight"""
+        """Handle CORS preflight - browser sends this BEFORE POST/GET"""
         self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header(
-            "Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"
-        )
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.end_headers()
+        self.end_headers()  # ← This will call our custom end_headers()
 
     def do_POST(self):
         """Handle POST requests"""
