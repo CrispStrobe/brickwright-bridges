@@ -27,6 +27,15 @@ from enum import Enum
 from collections import defaultdict
 import traceback
 
+import warnings
+# ============================================================================
+# 1. SILENCE THE NOISE (macOS / PyObjC Warnings)
+# ============================================================================
+# Filter out the ancient 'lightblue' and 'objc' warnings that flood the console
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", message=".*Objective-C subclass uses super.*")
+warnings.filterwarnings("ignore", message=".*pkg_resources is deprecated.*")
+
 # ============================================================================
 # DEPENDENCY MANAGER - Lazy Loading with Graceful Degradation
 # ============================================================================
@@ -137,8 +146,23 @@ class DependencyManager:
             self._logger.info("  ✅ aiohttp - Health endpoint enabled")
         except ImportError:
             self._logger.warning("  ⚠️  aiohttp not found - Health endpoint disabled")
-        
-        # Summary
+
+        try:
+            import websockets
+        except ImportError:
+            self._logger.warning("  ⚠️  websockets not found")
+            websockets = None
+
+        # Check for PyObjC on macOS (needed for non-hanging scan)
+        if platform.system() == 'Darwin':
+            try:
+                import objc
+                from IOBluetooth import IOBluetoothDeviceInquiry
+                self._logger.info("  ✅ PyObjC - Native macOS Bluetooth enabled")
+            except ImportError:
+                self._logger.warning("  ⚠️  PyObjC missing - macOS Bluetooth scan might hang/fail")
+                self._logger.warning("      Install: pip install pyobjc-framework-IOBluetooth")
+
         enabled = sum(1 for v in self.features.values() if v)
         self._logger.info(f"\n📊 {enabled}/{len(self.features)} features available")
         
@@ -760,69 +784,57 @@ class UniversalBluetoothClassicConnection(BaseConnection):
     async def connect(self) -> bool:
         """Connect via Bluetooth Classic with automatic fallback"""
         
-        # STRATEGY 1: Native Python Sockets (Python 3.9+ Windows, 3.3+ Linux)
+        # STRATEGY 1: Native Python Sockets (Preferred for Windows/Linux)
         if DEPS.features["classic_native"] and platform.system() != 'Darwin':
             try:
                 self.logger.info("🔌 Attempting native socket connection...")
-                
                 self.socket = std_socket.socket(
-                    std_socket.AF_BLUETOOTH,
-                    std_socket.SOCK_STREAM,
+                    std_socket.AF_BLUETOOTH, 
+                    std_socket.SOCK_STREAM, 
                     std_socket.BTPROTO_RFCOMM
                 )
-                
-                # Non-blocking connect
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(
                     None,
                     lambda: self.socket.connect((self.device_info.address, self.channel))
                 )
-                
                 self.socket.setblocking(False)
                 self.connection_strategy = "native"
                 self.connected = True
                 self.running = True
-                
                 self._start_threads()
-                
                 self.logger.info(f"✅ Connected (native): {self.device_info}")
                 return True
-                
             except Exception as e:
                 self.logger.warning(f"⚠️  Native socket failed: {e}")
-                if self.socket:
-                    try:
-                        self.socket.close()
-                    except:
-                        pass
-                    self.socket = None
-                
-                if not DEPS.features["classic_legacy"]:
-                    self.stats.update_error()
-                    return False
-        
-        # STRATEGY 2: Legacy PyBluez (fallback for macOS or if native fails)
+                if self.socket: self.socket.close()
+
+        # STRATEGY 2: Legacy PyBluez (Required for macOS)
         if DEPS.features["classic_legacy"]:
             try:
                 self.logger.info("🔌 Attempting PyBluez connection...")
-                
                 self.socket = DEPS.bluetooth_legacy.BluetoothSocket(
                     DEPS.bluetooth_legacy.RFCOMM
                 )
                 
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(
-                    None,
-                    lambda: self.socket.connect((self.device_info.address, self.channel))
-                )
+                # CRITICAL FIX FOR MACOS
+                if platform.system() == 'Darwin':
+                    # macOS: Connect Synchronously on Main Thread
+                    self.logger.debug("  ⚠️  macOS: Connecting synchronously")
+                    self.socket.connect((self.device_info.address, self.channel))
+                else:
+                    # Windows/Linux: Connect via Executor
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(
+                        None,
+                        lambda: self.socket.connect((self.device_info.address, self.channel))
+                    )
                 
                 self.socket.setblocking(False)
                 self.connection_strategy = "legacy"
                 self.connected = True
                 self.running = True
-                
                 self._start_threads()
-                
                 self.logger.info(f"✅ Connected (PyBluez): {self.device_info}")
                 return True
                 
@@ -1066,125 +1078,219 @@ class DeviceIdentifier:
 # DEVICE DISCOVERY (with Hot-Swap Support)
 # ============================================================================
 
-class DeviceDiscovery:
-    """Discover devices with periodic scanning"""
-    
-    def __init__(self, logger: logging.Logger):
-        self.logger = logger
-        self.discovered_cache: Dict[str, DeviceInfo] = {}
-    
-    async def discover_all(self) -> List[DeviceInfo]:
-        """Discover all available devices"""
+# MACOS NATIVE SCANNER (Fixes Hang/Crash)
+
+class MacOSBluetoothScanner:
+    """
+    Directly uses IOBluetooth to scan without hanging on macOS.
+    Fixes the 'deviceInquiryDeviceFound' argument mismatch error.
+    """
+    def scan(self, timeout=5.0):
         devices = []
+        try:
+            import objc
+            from IOBluetooth import IOBluetoothDeviceInquiry
+            from Foundation import NSRunLoop, NSDate, NSObject
+        except ImportError:
+            return []
+
+        # Delegate to receive device found events
+        class InquiryDelegate(NSObject):
+            def init(self):
+                self = objc.super(InquiryDelegate, self).init()
+                self.finished = False
+                self.found_devices = []
+                return self
+            
+            # Selector: deviceInquiryComplete:error:aborted:
+            def deviceInquiryComplete_error_aborted_(self, sender, error, aborted):
+                self.finished = True
+                
+            # Selector: deviceInquiryDeviceFound:device:
+            # CRITICAL FIX: Added _device_ suffix to match the 2-argument selector
+            def deviceInquiryDeviceFound_device_(self, sender, device):
+                self.found_devices.append(device)
+
+        # Create inquiry
+        delegate = InquiryDelegate.alloc().init()
+        inquiry = IOBluetoothDeviceInquiry.inquiryWithDelegate_(delegate)
+        inquiry.setInquiryLength_(int(timeout))
+        inquiry.setUpdateNewDeviceNames_(True)
         
-        self.logger.info("🔍 Starting device discovery...")
+        # Start on Main Thread
+        status = inquiry.start()
+        if status != 0: 
+            return []
+
+        # Manually pump the RunLoop so events process
+        start_time = time.time()
+        run_loop = NSRunLoop.currentRunLoop()
         
-        if DEPS.features["serial"]:
-            devices.extend(await self._discover_serial())
-        
-        if DEPS.features["classic_native"] or DEPS.features["classic_legacy"]:
-            devices.extend(await self._discover_bluetooth_classic())
-        
-        if DEPS.features["ble"]:
-            devices.extend(await self._discover_ble())
-        
-        # Update cache
-        for device in devices:
-            self.discovered_cache[device.get_id()] = device
-        
-        self.logger.info(f"✅ Discovery complete: found {len(devices)} device(s)")
+        while not delegate.finished:
+            run_loop.runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(0.1))
+            if time.time() - start_time > timeout + 2:
+                inquiry.stop()
+                break
+
+        # Extract results safely
+        for device in delegate.found_devices:
+            try:
+                name = device.name() or "Unknown"
+                addr = device.addressString() or "00:00:00:00:00:00"
+                devices.append((addr, name))
+            except:
+                continue
+            
         return devices
     
-    async def _discover_serial(self) -> List[DeviceInfo]:
-        """Discover serial devices"""
+class DeviceDiscovery:
+    def __init__(self, logger):
+        self.logger = logger
+    
+    async def discover_all(self):
         devices = []
+        self.logger.info("🔍 Starting device discovery...")
         
+        # 1. SERIAL SCAN
+        if DEPS.features["serial"]:
+            devices.extend(await self._discover_serial())
+            
+        # 2. BLE SCAN
+        if DEPS.features["ble"]:
+            devices.extend(await self._discover_ble())
+            
+        # 3. CLASSIC BLUETOOTH SCAN
+        if DEPS.features["classic_legacy"]:
+            devices.extend(await self._discover_bluetooth_classic())
+                
+        self.logger.info(f"✅ Discovery complete: found {len(devices)} device(s)")
+        return devices
+
+    async def _discover_serial(self):
+        devices = []
         try:
-            ports = DEPS.serial_lib.tools.list_ports.comports()
+            loop = asyncio.get_event_loop()
+            ports = await loop.run_in_executor(None, DEPS.serial_lib.tools.list_ports.comports)
             
             for port in ports:
-                device_type = DeviceIdentifier.identify_from_name(port.description)
+                name_lower = (port.description or "").lower()
+                dev_type = DeviceType.UNKNOWN # Default to Enum
                 
-                if device_type != DeviceType.UNKNOWN:
+                if "nxt" in name_lower: dev_type = DeviceType.NXT
+                elif "ev3" in name_lower: dev_type = DeviceType.EV3
+                elif "spike" in name_lower or "lego hub" in name_lower: dev_type = DeviceType.SPIKE_PRIME
+                elif "usb serial" in name_lower and port.manufacturer and "lego" in port.manufacturer.lower():
+                    dev_type = DeviceType.EV3
+
+                if dev_type != DeviceType.UNKNOWN:
+                    # FIX: Must return DeviceInfo object, not a dictionary!
                     devices.append(DeviceInfo(
-                        device_type=device_type,
-                        name=port.description or port.device,
+                        device_type=dev_type,
+                        name=port.description,
                         connection_type=ConnectionType.SERIAL,
                         port=port.device
                     ))
-                    self.logger.info(f"  📍 Serial: {port.device} - {port.description}")
-        
+                    self.logger.info(f"  📍 Serial: {port.device} ({port.description})")
         except Exception as e:
-            self.logger.error(f"❌ Serial discovery error: {e}")
-        
+            self.logger.error(f"Serial error: {e}")
         return devices
-    
-    async def _discover_bluetooth_classic(self) -> List[DeviceInfo]:
-        """Discover Bluetooth Classic devices"""
+
+    async def _discover_ble(self):
         devices = []
-        
-        # Only use PyBluez for discovery (native sockets don't have discovery API)
-        if not DEPS.features["classic_legacy"]:
-            return devices
+        if not DEPS.features["ble"]: return devices
         
         try:
-            self.logger.info("  🔵 Scanning Bluetooth Classic...")
+            self.logger.info("  🔵 Scanning BLE (5s)...")
             
+            # macOS Permission Check
+            if platform.system() == 'Darwin':
+                try:
+                    await asyncio.wait_for(DEPS.bleak_scanner.discover(timeout=0.5), timeout=1.0)
+                except asyncio.TimeoutError: pass
+                except Exception as e:
+                    if "permission" in str(e).lower() or "unauthorized" in str(e).lower():
+                        self.logger.error("❌ BLE Permission Denied! Enable Bluetooth in System Settings.")
+                        return devices
+
+            found = await DEPS.bleak_scanner.discover(timeout=5.0)
+            
+            for d in found:
+                name = d.name or "Unknown"
+                dev_type = DeviceIdentifier.identify_from_name(name)
+                
+                if dev_type == DeviceType.UNKNOWN and hasattr(d, 'metadata'):
+                    services = d.metadata.get('uuids', [])
+                    dev_type = DeviceIdentifier.identify_from_ble_services(services)
+                
+                if dev_type != DeviceType.UNKNOWN:
+                    devices.append(DeviceInfo(
+                        device_type=dev_type,
+                        name=name,
+                        connection_type=ConnectionType.BLE,
+                        address=d.address,
+                        rssi=getattr(d, 'rssi', None)
+                    ))
+                    self.logger.info(f"  📍 BLE: {name} @ {d.address}")
+                        
+        except Exception as e:
+            self.logger.error(f"BLE error: {e}")
+        return devices
+
+    async def _discover_bluetooth_classic(self):
+        """Discover Bluetooth Classic devices (Mac Safe)"""
+        devices = []
+        
+        # 1. macOS NATIVE SCAN
+        if platform.system() == 'Darwin':
+            try:
+                self.logger.info("  🔵 Scanning Bluetooth Classic (Native macOS)...")
+                
+                # Use our custom class that pumps the RunLoop
+                scanner = MacOSBluetoothScanner()
+                nearby = scanner.scan(timeout=6.0)
+                
+                for addr, name in nearby:
+                    # Normalize address (00-11-22 -> 00:11:22)
+                    addr = addr.replace("-", ":")
+                    dev_type = DeviceIdentifier.identify_from_name(name)
+                    
+                    if dev_type != DeviceType.UNKNOWN:
+                        devices.append(DeviceInfo(
+                            device_type=dev_type,
+                            name=name,
+                            connection_type=ConnectionType.BLUETOOTH_CLASSIC,
+                            address=addr
+                        ))
+                        self.logger.info(f"  📍 Classic: {name} @ {addr}")
+            except Exception as e:
+                self.logger.error(f"macOS Native Scan Error: {e}")
+            return devices
+
+        # 2. Windows/Linux (Standard PyBluez)
+        if not DEPS.features["classic_legacy"]:
+            return devices
+            
+        try:
+            self.logger.info("  🔵 Scanning Bluetooth Classic (PyBluez)...")
             loop = asyncio.get_event_loop()
             nearby = await loop.run_in_executor(
-                None,
-                lambda: DEPS.bluetooth_legacy.discover_devices(
-                    duration=8,
-                    lookup_names=True,
-                    flush_cache=True
-                )
+                None, 
+                lambda: DEPS.bluetooth_legacy.discover_devices(lookup_names=True, duration=6)
             )
             
             for addr, name in nearby:
-                device_type = DeviceIdentifier.identify_from_name(name)
-                
-                if device_type != DeviceType.UNKNOWN:
+                dev_type = DeviceIdentifier.identify_from_name(name)
+                if dev_type != DeviceType.UNKNOWN:
                     devices.append(DeviceInfo(
-                        device_type=device_type,
+                        device_type=dev_type,
                         name=name,
                         connection_type=ConnectionType.BLUETOOTH_CLASSIC,
                         address=addr
                     ))
-                    self.logger.info(f"  📍 Bluetooth: {name} @ {addr}")
-        
+                    self.logger.info(f"  📍 Classic: {name} @ {addr}")
+                    
         except Exception as e:
-            self.logger.error(f"❌ Bluetooth discovery error: {e}")
-        
-        return devices
-    
-    async def _discover_ble(self) -> List[DeviceInfo]:
-        """Discover BLE devices"""
-        devices = []
-        
-        try:
-            self.logger.info("  🔵 Scanning BLE...")
-            
-            discovered = await DEPS.bleak_scanner.discover(timeout=10.0)
-            
-            for device in discovered:
-                device_type = DeviceIdentifier.identify_from_name(device.name or "")
-                
-                if device_type == DeviceType.UNKNOWN and hasattr(device, 'metadata'):
-                    uuids = device.metadata.get('uuids', [])
-                    device_type = DeviceIdentifier.identify_from_ble_services(uuids)
-                
-                if device_type != DeviceType.UNKNOWN:
-                    devices.append(DeviceInfo(
-                        device_type=device_type,
-                        name=device.name or "Unknown",
-                        connection_type=ConnectionType.BLE,
-                        address=device.address,
-                        rssi=device.rssi
-                    ))
-                    self.logger.info(f"  📍 BLE: {device.name} @ {device.address}")
-        
-        except Exception as e:
-            self.logger.error(f"❌ BLE discovery error: {e}")
+            self.logger.error(f"Classic BT error: {e}")
         
         return devices
 
@@ -1412,27 +1518,101 @@ class UniversalBridgeServer:
             self.logger.info(f"🗑️  Device removed: {device_id}")
     
     async def hot_swap_scanner(self):
-        """Periodic scanner for new devices (hot-swap support)"""
+        """Robust periodic scanner (with better error recovery)"""
         self.logger.info("🔥 Hot-swap scanner started")
         
+        SCAN_INTERVAL = 5
+        BLE_SCAN_COOLDOWN = 30
+        
+        last_ble_scan = 0
+        consecutive_ble_failures = 0
+        
         while self.running:
-            await asyncio.sleep(10)  # Scan every 10 seconds
+            await asyncio.sleep(SCAN_INTERVAL)
             
-            try:
-                # Quick serial scan (cheap)
-                if DEPS.features["serial"]:
-                    new_devices = await self.discovery._discover_serial()
+            # Serial Scan (Always safe)
+            if DEPS.features["serial"]:
+                try:
+                    new_serial_devices = await asyncio.wait_for(
+                        self.discovery._discover_serial(),
+                        timeout=3.0
+                    )
                     
-                    for device in new_devices:
-                        if device.get_id() not in self.connections:
-                            self.logger.info(f"🆕 New device detected: {device}")
+                    for device in new_serial_devices:
+                        is_connected = any(
+                            c.device_info.port == device['address'] # Note: check dict keys vs obj
+                            for c in self.connections.values() 
+                            if c.device_info.connection_type == ConnectionType.SERIAL
+                        )
+                        
+                        if not is_connected:
+                            self.logger.info(f"🆕 Serial device detected: {device.name}")
                             await self.add_device(device)
+                            
+                except asyncio.TimeoutError:
+                    self.logger.warning("⚠️  Serial scan timeout")
+                except Exception as e:
+                    self.logger.warning(f"⚠️  Serial scan error: {e}")
+            
+            # BLE/BT Scan (Rate-limited and safe)
+            current_time = time.time()
+            if (current_time - last_ble_scan) > BLE_SCAN_COOLDOWN:
                 
-                # BLE scan less frequently (expensive)
-                # Could implement counter to scan BLE every 30s instead of 10s
+                # Skip if active BLE connections
+                active_ble_connections = any(
+                    c.device_info.connection_type == ConnectionType.BLE 
+                    for c in self.connections.values()
+                )
                 
-            except Exception as e:
-                self.logger.error(f"❌ Hot-swap scanner error: {e}")
+                if active_ble_connections:
+                    self.logger.debug("🛡️  Skipping BLE scan (active connections)")
+                    last_ble_scan = current_time - (BLE_SCAN_COOLDOWN / 2)
+                    continue
+                
+                # Backoff on repeated failures
+                if consecutive_ble_failures >= 3:
+                    self.logger.debug(f"⏸️  BLE scan paused ({consecutive_ble_failures} failures)")
+                    last_ble_scan = current_time
+                    consecutive_ble_failures = 0
+                    continue
+                
+                try:
+                    last_ble_scan = current_time
+                    new_devices = []
+                    
+                    # BLE scan with timeout
+                    if DEPS.features["ble"]:
+                        new_devices.extend(await asyncio.wait_for(
+                            self.discovery._discover_ble(),
+                            timeout=15.0
+                        ))
+                    
+                    # Classic BT (non-macOS only)
+                    if DEPS.features["classic_legacy"] and platform.system() != 'Darwin':
+                        new_devices.extend(await asyncio.wait_for(
+                            self.discovery._discover_bluetooth_classic(),
+                            timeout=15.0
+                        ))
+                    
+                    # Add new devices
+                    for device in new_devices:
+                        is_connected = any(
+                            c.device_info.address == device.address
+                            for c in self.connections.values()
+                        )
+                        
+                        if not is_connected:
+                            self.logger.info(f"🆕 Bluetooth device: {device.name}")
+                            await self.add_device(device)
+                    
+                    consecutive_ble_failures = 0  # Reset on success
+                    
+                except asyncio.TimeoutError:
+                    consecutive_ble_failures += 1
+                    self.logger.warning(f"⚠️  Bluetooth scan timeout ({consecutive_ble_failures})")
+                except Exception as e:
+                    consecutive_ble_failures += 1
+                    self.logger.warning(f"⚠️  Bluetooth scan error: {e}")
     
     async def start(self, host: str = "0.0.0.0"):
         """Start all WebSocket servers"""
@@ -1495,9 +1675,9 @@ async def async_main(args):
     print("""
 ╔═══════════════════════════════════════════════════════════════════════╗
 ║                                                                       ║
-║        Universal LEGO Bridge - Production Edition v2.0               ║
+║        Universal LEGO Bridge                                          ║
 ║                                                                       ║
-║  🔧 Multi-Device  •  🔄 Auto-Reconnect  •  🔥 Hot-Swap  •  📊 JSON   ║
+║  🔧 Multi-Device  •  🔄 Auto-Reconnect  •  🔥 Hot-Swap  •  📊 JSON     ║
 ║                                                                       ║
 ╚═══════════════════════════════════════════════════════════════════════╝
     """)
@@ -1664,5 +1844,8 @@ Examples:
             traceback.print_exc()
         sys.exit(1)
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass
