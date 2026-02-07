@@ -1978,12 +1978,11 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
 
             elif self.path == "/profile" or self.path == "/ev3.mobileconfig":
                 """Generate iOS configuration profile with embedded certificate"""
+                log("iOS profile requested by {0}".format(self.client_address[0]))
+                
                 try:
                     import socket
                     import uuid
-                    
-                    hostname = socket.gethostname()
-                    local_ip = socket.gethostbyname(hostname)
                     
                     # Read certificate
                     with open(SSL_CERT, 'rb') as f:
@@ -1992,11 +1991,14 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                     # Base64 encode for embedding
                     cert_b64 = base64.b64encode(cert_data).decode('ascii')
                     
-                    # Generate UUID for profile
-                    profile_uuid = str(uuid.uuid4())
-                    cert_uuid = str(uuid.uuid4())
+                    # Generate UUIDs
+                    profile_uuid = str(uuid.uuid4()).upper()
+                    cert_uuid = str(uuid.uuid4()).upper()
                     
-                    # Create configuration profile (XML plist format)
+                    hostname = socket.gethostname()
+                    local_ip = socket.gethostbyname(hostname)
+                    
+                    # Create configuration profile
                     profile = """<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -2005,15 +2007,15 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
     <array>
         <dict>
             <key>PayloadCertificateFileName</key>
-            <string>ev3.crt</string>
+            <string>ev3-robot.crt</string>
             <key>PayloadContent</key>
             <data>
 {cert_data}
             </data>
             <key>PayloadDescription</key>
-            <string>EV3 Robot SSL Certificate</string>
+            <string>EV3 Robot SSL Certificate - Allows secure HTTPS connection to your EV3</string>
             <key>PayloadDisplayName</key>
-            <string>EV3 SSL Certificate</string>
+            <string>EV3 Robot Certificate</string>
             <key>PayloadIdentifier</key>
             <string>com.ev3dev.cert.{cert_uuid}</string>
             <key>PayloadType</key>
@@ -2025,9 +2027,9 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
         </dict>
     </array>
     <key>PayloadDescription</key>
-    <string>Install this profile to trust the EV3 Robot HTTPS certificate</string>
+    <string>Install this profile to trust the EV3 Robot HTTPS certificate. This allows secure connection to your EV3 at {ip}</string>
     <key>PayloadDisplayName</key>
-    <string>EV3 Robot Certificate</string>
+    <string>EV3 Robot ({ip})</string>
     <key>PayloadIdentifier</key>
     <string>com.ev3dev.profile.{profile_uuid}</string>
     <key>PayloadRemovalDisallowed</key>
@@ -2042,19 +2044,22 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
 </plist>""".format(
                         cert_data=cert_b64,
                         cert_uuid=cert_uuid,
-                        profile_uuid=profile_uuid
+                        profile_uuid=profile_uuid,
+                        ip=local_ip
                     )
                     
                     profile_bytes = profile.encode('utf-8')
                     
+                    log("Sending iOS profile ({0} bytes)".format(len(profile_bytes)))
+                    
                     self.send_response(200)
                     self.send_header("Content-Type", "application/x-apple-aspen-config")
-                    self.send_header("Content-Disposition", 'attachment; filename="EV3-Certificate.mobileconfig"')
+                    self.send_header("Content-Disposition", 'attachment; filename="EV3-Robot.mobileconfig"')
                     self.send_header("Content-Length", str(len(profile_bytes)))
                     self.end_headers()
                     self.wfile.write(profile_bytes)
                     
-                    log("iOS configuration profile sent to {0}".format(self.client_address[0]))
+                    log("iOS profile sent successfully to {0}".format(self.client_address[0]))
                     
                 except Exception as e:
                     log("Profile generation error: {0}".format(str(e)))
