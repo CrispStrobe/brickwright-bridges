@@ -553,9 +553,9 @@
       this.availableScripts = [];
 
       // Streaming mode state
-      this.ev3Protocol = "http";
+      this.ev3Protocol = "https";
       this.ev3IP = "192.168.178.50";
-      this.ev3Port = 8080;
+      this.ev3Port = 8443;
       this.streamingMode = false;
 
       this.sensorCache = {};
@@ -686,15 +686,15 @@
               MODE: {
                 type: Scratch.ArgumentType.STRING,
                 menu: "connectionModes",
-                defaultValue: "http",
+                defaultValue: "https",
               },
               IP: {
                 type: Scratch.ArgumentType.STRING,
-                defaultValue: "192.168.1.100",
+                defaultValue: "192.168.178.50",
               },
               PORT: {
                 type: Scratch.ArgumentType.NUMBER,
-                defaultValue: 8080,
+                defaultValue: 8443,
               },
             },
           },
