@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
 """
 ev3_ondevice_bridge.py
@@ -66,6 +67,10 @@ SSL_CERT = "ev3.crt"
 SSL_KEY = "ev3.key"
 
 VERBOSE = False
+
+# Add connection tracking
+connection_counter = 0
+connection_lock = threading.Lock()
 
 # Ensure directories exist
 os.makedirs(SCRIPTS_DIR, exist_ok=True)
@@ -857,21 +862,32 @@ def safe_motor_command(motor, command_func, error_msg="Motor operation failed"):
 class BridgeHandler(http.server.BaseHTTPRequestHandler):
 
     def log_message(self, format, *args):
-        """Only log HTTP requests if verbose mode enabled"""
-        if VERBOSE:
-            log(
-                "HTTP {0} {1} from {2}".format(
-                    self.command, self.path, self.client_address[0]
-                )
-            )
+        """Log ALL HTTP requests with connection details"""
+        global connection_counter
+        
+        with connection_lock:
+            conn_id = connection_counter
+            
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        log_msg = "[{0}] [HTTP] [{1}] {2} {3} from {4}".format(
+            timestamp,
+            conn_id,
+            self.command,
+            self.path,
+            self.client_address[0]
+        )
+        print(log_msg)
 
     def end_headers(self):
-        """Add CORS headers for browser compatibility"""
+        """Add CORS headers for browser compatibility (including iOS)"""
         # Allow all origins (restrict in production!)
         self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, DELETE')
-        self.send_header('Access-Control-Max-Age', '3600')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, DELETE, PUT')
+        self.send_header('Access-Control-Max-Age', '86400')
+        self.send_header('Access-Control-Allow-Credentials', 'true')
+        # Cache control for iOS
+        self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
         super().end_headers()
 
     def _send_json(self, data, code=200):
@@ -888,7 +904,7 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         """Handle CORS preflight - browser sends this BEFORE POST/GET"""
         self.send_response(200)
-        self.end_headers()  # ← This will call our custom end_headers()
+        self.end_headers()  #  This will call our custom end_headers()
 
     def do_POST(self):
         """Handle POST requests"""
@@ -1960,6 +1976,196 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                 vlog("All buttons read", all_buttons)
                 self._send_json({"value": all_buttons})
 
+            elif self.path == "/profile" or self.path == "/ev3.mobileconfig":
+                """Generate iOS configuration profile with embedded certificate"""
+                try:
+                    import socket
+                    import uuid
+                    
+                    hostname = socket.gethostname()
+                    local_ip = socket.gethostbyname(hostname)
+                    
+                    # Read certificate
+                    with open(SSL_CERT, 'rb') as f:
+                        cert_data = f.read()
+                    
+                    # Base64 encode for embedding
+                    cert_b64 = base64.b64encode(cert_data).decode('ascii')
+                    
+                    # Generate UUID for profile
+                    profile_uuid = str(uuid.uuid4())
+                    cert_uuid = str(uuid.uuid4())
+                    
+                    # Create configuration profile (XML plist format)
+                    profile = """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>PayloadContent</key>
+    <array>
+        <dict>
+            <key>PayloadCertificateFileName</key>
+            <string>ev3.crt</string>
+            <key>PayloadContent</key>
+            <data>
+{cert_data}
+            </data>
+            <key>PayloadDescription</key>
+            <string>EV3 Robot SSL Certificate</string>
+            <key>PayloadDisplayName</key>
+            <string>EV3 SSL Certificate</string>
+            <key>PayloadIdentifier</key>
+            <string>com.ev3dev.cert.{cert_uuid}</string>
+            <key>PayloadType</key>
+            <string>com.apple.security.root</string>
+            <key>PayloadUUID</key>
+            <string>{cert_uuid}</string>
+            <key>PayloadVersion</key>
+            <integer>1</integer>
+        </dict>
+    </array>
+    <key>PayloadDescription</key>
+    <string>Install this profile to trust the EV3 Robot HTTPS certificate</string>
+    <key>PayloadDisplayName</key>
+    <string>EV3 Robot Certificate</string>
+    <key>PayloadIdentifier</key>
+    <string>com.ev3dev.profile.{profile_uuid}</string>
+    <key>PayloadRemovalDisallowed</key>
+    <false/>
+    <key>PayloadType</key>
+    <string>Configuration</string>
+    <key>PayloadUUID</key>
+    <string>{profile_uuid}</string>
+    <key>PayloadVersion</key>
+    <integer>1</integer>
+</dict>
+</plist>""".format(
+                        cert_data=cert_b64,
+                        cert_uuid=cert_uuid,
+                        profile_uuid=profile_uuid
+                    )
+                    
+                    profile_bytes = profile.encode('utf-8')
+                    
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/x-apple-aspen-config")
+                    self.send_header("Content-Disposition", 'attachment; filename="EV3-Certificate.mobileconfig"')
+                    self.send_header("Content-Length", str(len(profile_bytes)))
+                    self.end_headers()
+                    self.wfile.write(profile_bytes)
+                    
+                    log("iOS configuration profile sent to {0}".format(self.client_address[0]))
+                    
+                except Exception as e:
+                    log("Profile generation error: {0}".format(str(e)))
+                    if VERBOSE:
+                        traceback.print_exc()
+                    self._send_json({"status": "error", "msg": str(e)}, 500)
+            
+            # === CERTIFICATE DOWNLOAD ===
+            elif self.path == "/certificate" or self.path == "/ev3.crt":
+                """Serve certificate file for iOS/macOS installation"""
+                log("Certificate download requested by {0}".format(self.client_address[0]))
+                
+                try:
+                    cert_path = os.path.join(os.getcwd(), SSL_CERT)
+                    
+                    if not os.path.exists(cert_path):
+                        cert_path = SSL_CERT
+                    
+                    if not os.path.exists(cert_path):
+                        log("Certificate file not found: {0}".format(cert_path))
+                        self._send_json({"status": "error", "msg": "Certificate not found"}, 404)
+                        return
+                    
+                    log("Reading certificate from: {0}".format(cert_path))
+                    
+                    with open(cert_path, 'rb') as f:
+                        cert_data = f.read()
+                    
+                    # Verify it's valid PEM format
+                    cert_str = cert_data.decode('utf-8')
+                    if not cert_str.startswith('-----BEGIN CERTIFICATE-----'):
+                        log("ERROR: Certificate file is not in PEM format!")
+                        self._send_json({"status": "error", "msg": "Invalid certificate format"}, 500)
+                        return
+                    
+                    log("Sending certificate ({0} bytes)".format(len(cert_data)))
+                    
+                    self.send_response(200)
+                    # Use proper MIME type for certificates
+                    self.send_header("Content-Type", "application/x-pem-file")
+                    self.send_header("Content-Disposition", 'attachment; filename="ev3.crt"')
+                    self.send_header("Content-Length", str(len(cert_data)))
+                    self.send_header("Cache-Control", "no-cache")
+                    self.end_headers()
+                    self.wfile.write(cert_data)
+                    
+                    log("Certificate sent successfully to {0}".format(self.client_address[0]))
+                    
+                except Exception as e:
+                    log("Certificate download error: {0}".format(str(e)))
+                    if VERBOSE:
+                        traceback.print_exc()
+                    self._send_json({"status": "error", "msg": str(e)}, 500)
+
+            elif self.path == "/test.html" or self.path == "/test":
+                """Simple test page"""
+                html = """<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>EV3 Bridge Test</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; max-width: 600px; margin: 0 auto; }
+        button { padding: 10px 20px; margin: 10px 0; font-size: 16px; }
+        pre { background: #f0f0f0; padding: 10px; overflow: auto; }
+        .success { color: green; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>EV3 Bridge Test Page</h1>
+    
+    <p>Protocol: <strong>""" + ("HTTPS" if USE_SSL else "HTTP") + """</strong></p>
+    
+    <button onclick="testStatus()">Test /status</button>
+    <button onclick="testScripts()">Test /scripts</button>
+    <button onclick="testBattery()">Test /battery</button>
+    
+    <h2>Result:</h2>
+    <pre id="result">Click a button to test...</pre>
+    
+    <script>
+    async function testEndpoint(url, name) {
+        const resultEl = document.getElementById('result');
+        resultEl.textContent = 'Testing ' + name + '...\\n';
+        
+        try {
+            const response = await fetch(url);
+            const data = await response.json();
+            resultEl.textContent = 'SUCCESS: ' + name + '\\n\\n' + JSON.stringify(data, null, 2);
+            resultEl.className = 'success';
+        } catch (err) {
+            resultEl.textContent = 'ERROR: ' + err.message;
+            resultEl.className = 'error';
+        }
+    }
+    
+    function testStatus() { testEndpoint('/status', '/status'); }
+    function testScripts() { testEndpoint('/scripts', '/scripts'); }
+    function testBattery() { testEndpoint('/battery', '/battery'); }
+    </script>
+</body>
+</html>"""
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(html.encode())))
+                self.end_headers()
+                self.wfile.write(html.encode())
+                log("Test page served to {0}".format(self.client_address[0]))
+
             else:
                 self._send_json({"status": "error", "msg": "Unknown endpoint"}, 404)
 
@@ -1982,7 +2188,7 @@ def draw_script_menu():
     display.clear()
 
     # Title
-    display.text_pixels("SCRIPT MENU", x=30, y=2, font="Lat15-Terminus12x6")
+    display.text_pixels("SCRIPT MENU", x=30, y=2)  # Use default font
     display.text_pixels("=" * 26, x=2, y=15)
 
     # Get current scripts
@@ -2019,13 +2225,9 @@ def draw_script_menu():
 
         # Highlight selected
         if i == current_menu_index:
-            display.text_pixels(
-                "> " + display_name, x=5, y=y, font="Lat15-Terminus12x6"
-            )
+            display.text_pixels("> " + display_name, x=5, y=y)
         else:
-            display.text_pixels(
-                "  " + display_name, x=5, y=y, font="Lat15-Terminus12x6"
-            )
+            display.text_pixels("  " + display_name, x=5, y=y)
 
         y += 15
 
@@ -2047,7 +2249,7 @@ def draw_status_screen():
     display.clear()
 
     # Title
-    display.text_pixels("EV3 BRIDGE v2.3", x=15, y=2, font="Lat15-Terminus12x6")
+    display.text_pixels("EV3 BRIDGE v2.3", x=15, y=2)
     display.text_pixels("=" * 26, x=2, y=15)
 
     # Connection info
@@ -2201,9 +2403,28 @@ def ui_loop():
 
 
 def generate_self_signed_cert(cert_file="ev3.crt", key_file="ev3.key"):
-    """Generate self-signed certificate"""
+    """Generate self-signed certificate compatible with macOS and iOS"""
+    
+    # If files exist, verify they're valid
     if os.path.exists(cert_file) and os.path.exists(key_file):
-        return True
+        try:
+            # Quick validation
+            result = subprocess.Popen(
+                ["openssl", "x509", "-in", cert_file, "-noout"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            stdout, stderr = result.communicate()
+            
+            if result.returncode == 0:
+                log("Using existing valid certificate: {0}".format(cert_file))
+                return True
+            else:
+                log("Existing certificate is invalid, regenerating...")
+                os.remove(cert_file)
+                os.remove(key_file)
+        except:
+            pass
 
     try:
         import socket
@@ -2211,53 +2432,266 @@ def generate_self_signed_cert(cert_file="ev3.crt", key_file="ev3.key"):
         hostname = socket.gethostname()
         local_ip = socket.gethostbyname(hostname)
 
+        log("Generating SSL certificate for macOS/iOS compatibility...")
+        log("IP Address: {0}".format(local_ip))
+        log("Hostname: {0}".format(hostname))
+
+        # Create OpenSSL config file with proper extensions
+        config_file = "/tmp/ev3_openssl.cnf"
+        config_content = """[req]
+default_bits = 2048
+prompt = no
+default_md = sha256
+distinguished_name = dn
+req_extensions = v3_req
+x509_extensions = v3_ca
+
+[dn]
+C = US
+ST = State
+L = City
+O = EV3 Robot
+OU = EV3dev
+CN = {ip}
+
+[v3_req]
+basicConstraints = CA:FALSE
+keyUsage = nonRepudiation, digitalSignature, keyEncipherment
+subjectAltName = @alt_names
+
+[v3_ca]
+basicConstraints = CA:TRUE
+keyUsage = nonRepudiation, digitalSignature, keyEncipherment
+subjectAltName = @alt_names
+
+[alt_names]
+IP.1 = {ip}
+DNS.1 = {hostname}
+DNS.2 = localhost
+DNS.3 = ev3dev.local
+DNS.4 = ev3dev
+""".format(ip=local_ip, hostname=hostname)
+
+        with open(config_file, "w") as f:
+            f.write(config_content)
+
+        log("OpenSSL config created: {0}".format(config_file))
+
+        # Generate the certificate
         cmd = [
-            "openssl",
-            "req",
+            "openssl", "req",
             "-x509",
-            "-newkey",
-            "rsa:2048",
+            "-newkey", "rsa:2048",
             "-nodes",
-            "-out",
-            cert_file,
-            "-keyout",
-            key_file,
-            "-days",
-            "365",
-            "-subj",
-            "/CN={0}".format(local_ip),
+            "-keyout", key_file,
+            "-out", cert_file,
+            "-days", "825",  # iOS maximum
+            "-config", config_file
         ]
 
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        return result.returncode == 0
+        log("Running: {0}".format(" ".join(cmd)))
+        
+        result = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        stdout, stderr = result.communicate()
+
+        if result.returncode != 0:
+            log("Certificate generation failed!")
+            log("STDERR: {0}".format(stderr.decode() if stderr else "None"))
+            log("STDOUT: {0}".format(stdout.decode() if stdout else "None"))
+            return False
+
+        # Verify the certificate was created correctly
+        verify_cmd = ["openssl", "x509", "-in", cert_file, "-text", "-noout"]
+        verify_result = subprocess.Popen(
+            verify_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        stdout, stderr = verify_result.communicate()
+
+        if verify_result.returncode == 0:
+            log("Certificate generated and verified successfully!")
+            log("")
+            log("=" * 60)
+            log("CERTIFICATE INSTALLATION INSTRUCTIONS")
+            log("=" * 60)
+            log("")
+            log("macOS:")
+            log("  1. Download: https://{0}:8443/certificate".format(local_ip))
+            log("  2. Double-click ev3.crt")
+            log("  3. Select 'System' keychain (requires admin password)")
+            log("  4. Click 'Add'")
+            log("  5. Find 'EV3 Robot' certificate in Keychain Access")
+            log("  6. Double-click → Trust → 'Always Trust'")
+            log("")
+            log("iOS:")
+            log("  1. Safari: https://{0}:8443/certificate".format(local_ip))
+            log("  2. Settings → Profile Downloaded → Install")
+            log("  3. Settings → General → About → Certificate Trust Settings")
+            log("  4. Enable the EV3 certificate")
+            log("")
+            log("=" * 60)
+            log("")
+            
+            return True
+        else:
+            log("Certificate verification failed!")
+            log("STDERR: {0}".format(stderr.decode() if stderr else "None"))
+            return False
+
     except Exception as e:
-        log("Certificate generation failed", str(e))
+        log("Certificate generation failed: {0}".format(str(e)))
+        if VERBOSE:
+            traceback.print_exc()
         return False
 
 
 def run_server():
-    """Start HTTP server"""
+    """Start HTTP server with detailed SSL debugging"""
+    global connection_counter
+    
+    log("Initializing server...")
+    
     socketserver.TCPServer.allow_reuse_address = True
     server = socketserver.TCPServer(("", PORT), BridgeHandler)
     server.allow_reuse_address = True
+    
+    log("Server socket created on port {0}".format(PORT))
 
     if USE_SSL:
+        log("SSL mode enabled - setting up HTTPS...")
+        
         if not generate_self_signed_cert(SSL_CERT, SSL_KEY):
             log("Cannot start HTTPS without certificates")
             return
 
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        context.load_cert_chain(SSL_CERT, SSL_KEY)
-        server.socket = context.wrap_socket(server.socket, server_side=True)
+        # Verify certificate files exist and are readable
+        if not os.path.exists(SSL_CERT):
+            log("ERROR: Certificate file not found: {0}".format(SSL_CERT))
+            return
+            
+        if not os.path.exists(SSL_KEY):
+            log("ERROR: Key file not found: {0}".format(SSL_KEY))
+            return
+            
+        log("Certificate files verified:")
+        log("  - Cert: {0} ({1} bytes)".format(SSL_CERT, os.path.getsize(SSL_CERT)))
+        log("  - Key:  {0} ({1} bytes)".format(SSL_KEY, os.path.getsize(SSL_KEY)))
 
+        try:
+            log("Step 3b: Creating SSL context (Python 3.5)...")
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS)
+            log("Step 3b: SUCCESS - SSL context created")
+            
+            log("Step 3c: Loading certificate chain...")
+            context.load_cert_chain(SSL_CERT, SSL_KEY)
+            log("Step 3c: SUCCESS - Certificate loaded")
+            
+            log("Step 3d: Configuring SSL options...")
+            # Disable old protocols
+            context.options |= ssl.OP_NO_SSLv2
+            context.options |= ssl.OP_NO_SSLv3
+            
+            # CRITICAL: Don't request client certificates
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+            
+            # Disable TLS compression (CRIME attack mitigation)
+            try:
+                context.options |= ssl.OP_NO_COMPRESSION
+            except AttributeError:
+                pass
+            
+            log("Step 3d: SUCCESS - SSL options configured")
+            log("  - Client certificate verification: DISABLED")
+            log("  - Hostname checking: DISABLED")
+            
+            log("Step 3e: Wrapping socket with SSL...")
+            original_socket = server.socket
+            server.socket = context.wrap_socket(
+                original_socket, 
+                server_side=True,
+                do_handshake_on_connect=False  # Changed to False for better error handling
+            )
+            log("Step 3e: SUCCESS - SSL socket wrapped")
+            
+        except ssl.SSLError as e:
+            log("SSL Error: {0}".format(str(e)))
+            if VERBOSE:
+                traceback.print_exc()
+            return
+        except Exception as e:
+            log("Error setting up SSL: {0}".format(str(e)))
+            if VERBOSE:
+                traceback.print_exc()
+            return
+
+    # Get actual IP address
+    try:
+        import socket
+        hostname = socket.gethostname()
+        local_ip = socket.gethostbyname(hostname)
+    except:
+        local_ip = "UNKNOWN"
+    
     log("=" * 50)
     log("EV3 Bridge Server v2.3 Started")
     log("Protocol: {0}".format("HTTPS" if USE_SSL else "HTTP"))
     log("Port: {0}".format(PORT))
+    log("IP Address: {0}".format(local_ip))
+    log("Listening on: 0.0.0.0:{0}".format(PORT))
     log("=" * 50)
-
-    server.serve_forever()
-
+    
+    if USE_SSL:
+        log("")
+        log("HTTPS is enabled!")
+        log("Download certificate: https://{0}:{1}/certificate".format(local_ip, PORT))
+        log("Test page: https://{0}:{1}/test.html".format(local_ip, PORT))
+        log("Status page: https://{0}:{1}/status".format(local_ip, PORT))
+        log("")
+        log("From your computer/phone, visit:")
+        log("  https://{0}:{1}/test.html".format(local_ip, PORT))
+        log("")
+    
+    # Override request handler to add connection tracking
+    original_finish_request = server.finish_request
+    
+    def tracked_finish_request(request, client_address):
+        global connection_counter
+        with connection_lock:
+            conn_id = connection_counter
+            connection_counter += 1
+        
+        log("New connection #{0} from {1}".format(conn_id, client_address[0]))
+        
+        try:
+            original_finish_request(request, client_address)
+            log("Connection #{0} completed successfully".format(conn_id))
+        except ssl.SSLError as e:
+            log("SSL Error on connection #{0}: {1}".format(conn_id, str(e)))
+            if VERBOSE:
+                traceback.print_exc()
+        except Exception as e:
+            log("Error on connection #{0}: {1}".format(conn_id, str(e)))
+            if VERBOSE:
+                traceback.print_exc()
+    
+    server.finish_request = tracked_finish_request
+    
+    log("Server ready - accepting connections...")
+    
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        log("Server shutting down...")
+    except Exception as e:
+        log("Server error: {0}".format(str(e)))
+        if VERBOSE:
+            traceback.print_exc()
 
 # ============================================================================
 # MAIN
@@ -2271,51 +2705,99 @@ def main():
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--no-ui", action="store_true")
-    parser.add_argument("--ssl", "--https", action="store_true")
+    parser.add_argument("--ssl", "--https", action="store_true", 
+                        help="Enable HTTPS (required for iOS)")
+    parser.add_argument("--no-ssl", action="store_true",
+                        help="Disable HTTPS (not recommended for iOS)")
     parser.add_argument("--cert", type=str, default="ev3.crt")
     parser.add_argument("--key", type=str, default="ev3.key")
 
     args = parser.parse_args()
 
+    args = parser.parse_args()
+
     PORT = args.port
     VERBOSE = args.verbose
-    USE_SSL = args.ssl
+    USE_SSL = args.ssl or not args.no_ssl  # Default to SSL unless --no-ssl
     SSL_CERT = args.cert
     SSL_KEY = args.key
 
+    # Use HTTPS port by default if SSL enabled
     if USE_SSL and args.port == 8080:
         PORT = 8443
+    
+    # Warn about iOS compatibility
+    if not USE_SSL:
+        log("WARNING: Running without SSL - iOS will likely block connections!")
+        log("Use --ssl flag for iOS compatibility")
 
     print("=" * 50)
     print("EV3 BRIDGE SERVER v2.3 with Script Manager")
     print("=" * 50)
 
     # Start script scanning thread
+    log("Starting script scanner thread...")
     def script_scanner():
         while True:
-            script_manager.scan_scripts()
+            try:
+                script_manager.scan_scripts()
+            except Exception as e:
+                log("Script scanner error: {0}".format(str(e)))
             time.sleep(2)
 
     scanner_thread = threading.Thread(target=script_scanner, daemon=True)
     scanner_thread.start()
+    log("Script scanner thread started")
 
-    # Start server thread
-    server_thread = threading.Thread(target=run_server, daemon=True)
+    # Start server thread with error catching
+    log("Starting server thread...")
+    
+    server_error = {'error': None}  # Mutable container to capture errors
+    
+    def server_wrapper():
+        try:
+            run_server()
+        except Exception as e:
+            server_error['error'] = e
+            log("SERVER THREAD CRASHED: {0}".format(str(e)))
+            traceback.print_exc()
+    
+    server_thread = threading.Thread(target=server_wrapper, daemon=True)
     server_thread.start()
+    log("Server thread started")
+    
+    # Give server time to start
+    time.sleep(1)
+    
+    # Check if server started successfully
+    if not server_thread.is_alive():
+        log("ERROR: Server thread died immediately!")
+        if server_error['error']:
+            log("Reason: {0}".format(str(server_error['error'])))
+        sys.exit(1)
+    
+    log("Server thread is alive and running")
 
     if args.no_ui:
-        log("Running in headless mode")
+        log("Running in headless mode (no UI)")
         try:
             while True:
                 time.sleep(1)
+                # Periodically check if server thread is still alive
+                if not server_thread.is_alive():
+                    log("ERROR: Server thread died!")
+                    if server_error['error']:
+                        log("Reason: {0}".format(str(server_error['error'])))
+                    break
         except KeyboardInterrupt:
-            pass
+            log("Shutting down...")
     else:
         # Run UI with menu
+        log("Starting UI...")
         try:
             ui_loop()
         except KeyboardInterrupt:
-            pass
+            log("Shutting down...")
 
 
 if __name__ == "__main__":

@@ -1540,7 +1540,7 @@ class UniversalBridgeServer:
                     
                     for device in new_serial_devices:
                         is_connected = any(
-                            c.device_info.port == device['address'] # Note: check dict keys vs obj
+                            c.device_info.port == device.port 
                             for c in self.connections.values() 
                             if c.device_info.connection_type == ConnectionType.SERIAL
                         )
@@ -1697,6 +1697,7 @@ async def async_main(args):
     if not any(DEPS.features.values()):
         logger.error("\n❌ No connection libraries available!")
         logger.error("   Install: pip install pyserial bleak pybluez")
+        logger.erorr("   or: pip install git+https://github.com/airgproducts/pybluez2.git")
         return
     
     # Supported devices
