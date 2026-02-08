@@ -715,31 +715,28 @@ script_manager = ScriptManager(SCRIPTS_DIR)
 # MOTOR & SENSOR HELPERS
 # ============================================================================
 
-
 def get_motor(port_char):
     """
     Lazy load generic Tacho Motor (EV3 Large, Medium, or NXT).
-    Using 'Motor' class allows NXT motors to work automatically.
+    Uses 'Motor' class to be universal.
     """
     if port_char in motors:
         motor = motors[port_char]
         if motor:
             try:
-                # Check connection status
-                if motor.connected: 
-                    return motor
+                if motor.connected: return motor
             except:
                 pass
-            log(f"Motor {port_char} disconnected")
+            log("Motor {0} disconnected".format(port_char))
             motors[port_char] = None
 
     try:
         mapping = {"A": OUTPUT_A, "B": OUTPUT_B, "C": OUTPUT_C, "D": OUTPUT_D}
-        # Initialize as generic Motor to support NXT, Large, and Medium
+        # USE GENERIC MOTOR CLASS HERE - Covers Large, Medium, and NXT
         motors[port_char] = Motor(mapping[port_char])
-        log(f"Tacho Motor initialized on port {port_char}")
+        log("Tacho Motor initialized on port {0}".format(port_char))
     except Exception as e:
-        log("Motor init failed", str(e))
+        log("Motor init failed: {0}".format(str(e)))
         motors[port_char] = None
 
     return motors[port_char]
@@ -753,9 +750,9 @@ def get_dc_motor(port_char):
     try:
         mapping = {"A": OUTPUT_A, "B": OUTPUT_B, "C": OUTPUT_C, "D": OUTPUT_D}
         motors[key] = DcMotor(mapping[port_char])
-        log(f"DC Motor initialized on port {port_char}")
+        log("DC Motor initialized on port {0}".format(port_char))
     except Exception as e:
-        log("DC Motor init failed", str(e))
+        log("DC Motor init failed: {0}".format(str(e)))
         motors[key] = None
     return motors[key]
 
@@ -1084,6 +1081,7 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                     self._send_json({"status": "error", "msg": "Delete failed"}, 500)
 
             # === PORT CONFIGURATION (Fix for old NXT Sensors) ===
+            # === PORT CONFIGURATION (Fix for old NXT Sensors) ===
             elif command == "configure_port":
                 port_num = str(data["port"])
                 device_type = data["device"]
@@ -1095,30 +1093,37 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                     p = LegoPort(address)
                     
                     if device_type == "lego-nxt-touch":
+                        # 1. Set mode to analog FIRST (required by driver)
                         p.mode = "nxt-analog"
+                        # 2. Wait briefly for kernel to switch mode
+                        time.sleep(0.1)
+                        # 3. Force the specific device driver
                         p.set_device = "lego-nxt-touch"
-                        vlog(f"Configured Port {port_num} for NXT Touch")
+                        vlog("Configured Port {0} for NXT Touch".format(port_num))
                         
                     elif device_type == "lego-nxt-light":
                         p.mode = "nxt-analog"
+                        time.sleep(0.1)
                         p.set_device = "lego-nxt-light"
-                        vlog(f"Configured Port {port_num} for NXT Light")
+                        vlog("Configured Port {0} for NXT Light".format(port_num))
                         
                     elif device_type == "lego-nxt-sound":
                         p.mode = "nxt-analog"
+                        time.sleep(0.1)
                         p.set_device = "lego-nxt-sound"
-                        vlog(f"Configured Port {port_num} for NXT Sound")
+                        vlog("Configured Port {0} for NXT Sound".format(port_num))
                         
                     elif device_type == "reset":
                         p.mode = "auto"
-                        vlog(f"Reset Port {port_num} to Auto")
+                        vlog("Reset Port {0} to Auto".format(port_num))
                         
-                    # Give the kernel a moment to load the driver
+                    # Give the kernel a moment to load the driver before returning
                     time.sleep(0.5)
                     self._send_json({"status": "ok"})
                     
                 except Exception as e:
-                    log(f"Port config failed for {address}", str(e))
+                    # Log the specific error for debugging
+                    log("Port config failed for {0}: {1}".format(address, str(e)))
                     self._send_json({"status": "error", "msg": str(e)})
 
             # === MOTORS ===
