@@ -91,6 +91,16 @@ buttons = Button()
 leds = Leds()
 power = PowerSupply()
 
+# === Motor Configuration Memory ===
+# Stores ramping (smoothing) settings for each port. 
+# Default is 250ms (Smooth). 0ms would be sharp/instant.
+motor_config = {
+    'A': {'up': 250, 'down': 250},
+    'B': {'up': 250, 'down': 250},
+    'C': {'up': 250, 'down': 250},
+    'D': {'up': 250, 'down': 250},
+}
+
 # Script management
 running_scripts = {}
 script_counter = 0
@@ -717,8 +727,7 @@ script_manager = ScriptManager(SCRIPTS_DIR)
 
 def get_motor(port_char):
     """
-    Lazy load generic Tacho Motor (EV3 Large, Medium, or NXT).
-    Uses 'Motor' class to be universal.
+    Lazy load generic Tacho Motor with CUSTOM RAMPING from config.
     """
     if port_char in motors:
         motor = motors[port_char]
@@ -732,9 +741,17 @@ def get_motor(port_char):
 
     try:
         mapping = {"A": OUTPUT_A, "B": OUTPUT_B, "C": OUTPUT_C, "D": OUTPUT_D}
-        # USE GENERIC MOTOR CLASS HERE - Covers Large, Medium, and NXT
-        motors[port_char] = Motor(mapping[port_char])
-        log("Tacho Motor initialized on port {0}".format(port_char))
+        # Use Universal Motor Class
+        m = Motor(mapping[port_char])
+        
+        # === APPLY SAVED SMOOTHING SETTINGS ===
+        # Default to 250ms if port not found in config
+        settings = motor_config.get(port_char, {'up': 250, 'down': 250})
+        m.ramp_up_sp = settings['up']
+        m.ramp_down_sp = settings['down']
+        
+        motors[port_char] = m
+        log("Tacho Motor initialized on port {0} (Ramp: {1})".format(port_char, settings['up']))
     except Exception as e:
         log("Motor init failed: {0}".format(str(e)))
         motors[port_char] = None
@@ -1274,6 +1291,23 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                             "msg": "Tank drive failed - motors disconnected",
                         }
                     )
+            
+            # === SET MOTOR RAMPING ===
+            elif command == "set_motor_ramping":
+                port = data["port"]
+                ramp_up = int(data.get("up", 250))
+                ramp_down = int(data.get("down", 250))
+                
+                # 1. Save to Global Memory (Persistent)
+                if port in motor_config:
+                    motor_config[port]['up'] = ramp_up
+                    motor_config[port]['down'] = ramp_down
+                
+                # 2. Update Active Motor Immediately (if connected)
+                m = get_motor(port) # This will apply the new config
+                
+                vlog("Ramping set", {"port": port, "up": ramp_up, "down": ramp_down})
+                self._send_json({"status": "ok"})
 
             elif command == "stop_all_motors":
                 try:

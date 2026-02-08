@@ -39,6 +39,7 @@
       motorRunTimed: "motor [PORT] run for [SECONDS] seconds at [SPEED]%",
       motorRunToAbs: "motor [PORT] go to position [POS]° at [SPEED]%",
       motorRunDegrees: "motor [PORT] run [DEGREES] degrees at [SPEED]%",
+      motorSetRamp: "set motor [PORT] smoothing to [MS] ms",
       
       motorStop: "motor [PORT] stop [BRAKE]",
       tankDrive: "tank drive L:[LEFT] R:[RIGHT] for [ROTATIONS] rotations",
@@ -239,6 +240,7 @@
       motorRunTimed: "Motor [PORT] läuft [SECONDS] Sekunden mit [SPEED]%",
       motorRunToAbs: "Motor [PORT] gehe zu Position [POS]° mit [SPEED]%",
       motorRunDegrees: "Motor [PORT] läuft [DEGREES] Grad mit [SPEED]%",
+      motorSetRamp: "setze Motor [PORT] Dämpfung auf [MS] ms",
       
       tankDrive: "Kettenantrieb L:[LEFT] R:[RIGHT] für [ROTATIONS] Umdrehungen",
       motorPosition: "Motor [PORT] Position",
@@ -1115,7 +1117,15 @@
               SPEED: { type: Scratch.ArgumentType.NUMBER, defaultValue: 50 },
             },
           },
-
+          {
+            opcode: "ev3MotorSetRamping",
+            blockType: Scratch.BlockType.COMMAND,
+            text: t("motorSetRamp"),
+            arguments: {
+              PORT: { type: Scratch.ArgumentType.STRING, menu: "motorPorts" },
+              MS: { type: Scratch.ArgumentType.NUMBER, defaultValue: 250 },
+            },
+          },
 
           {
             opcode: "ev3TankDrive",
@@ -3237,6 +3247,14 @@
       });
     }
 
+    ev3MotorSetRamping(args) {
+      this.sendCommand("set_motor_ramping", {
+        port: args.PORT,
+        up: args.MS,
+        down: args.MS,
+      });
+    }
+
     servoStop(args) {
         this.sendCommand("servo_stop", { port: args.PORT });
     }
@@ -4577,7 +4595,18 @@
         this.indentLevel++;
         this.addLine('motor.stop(stop_action="' + brake + '")');
         this.indentLevel--;
-      } else if (opcode === "scratchtoev3_ev3TankDrive") {
+      } else if (opcode === "scratchtoev3_ev3MotorSetRamping") {
+        const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
+        const ms = this.getInputValue(block, "MS", blocks);
+        this.addLine(`motor = get_motor("${port}")`);
+        this.addLine("if motor:");
+        this.indentLevel++;
+        this.addLine(`motor.ramp_up_sp = ${ms}`);
+        this.addLine(`motor.ramp_down_sp = ${ms}`);
+        this.indentLevel--;
+      }
+      
+      else if (opcode === "scratchtoev3_ev3TankDrive") {
         const left = this.getInputValue(block, "LEFT", blocks);
         const right = this.getInputValue(block, "RIGHT", blocks);
         const rotations = this.getInputValue(block, "ROTATIONS", blocks);
