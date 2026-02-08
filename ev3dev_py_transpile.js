@@ -13,11 +13,13 @@
   const translations = {
     en: {
       // Extension Info
-      extensionName: "ev3dev",
+      extensionName: "EV3dev2 Control",
 
       // Connection
       connection: "Connection",
       setEV3IP: "set EV3 IP to [IP]",
+      setCredentials: "set credentials user [USER] password [PASS]", // for htpasswd
+      
       enableStreaming: "enable streaming mode",
       disableStreaming: "disable streaming mode",
       testConnection: "test EV3 connection",
@@ -37,15 +39,34 @@
       tankDrive: "tank drive L:[LEFT] R:[RIGHT] for [ROTATIONS] rotations",
       motorPosition: "motor [PORT] position",
       motorSpeed: "motor [PORT] speed",
+      motorIsRunning: "motor [PORT] is running?",
+      motorIsStalled: "motor [PORT] is stalled?",
       motorReset: "reset motor [PORT] position",
+      
+      // Servo
+      servo: "Servo",
+      servoRunTo: "servo [PORT] move to [POS]° speed [SPEED]%",
+
+      // Steering
+      steering: "Steering",
+      moveSteering: "steer [STEERING] speed [SPEED]% for [ROTATIONS] rot",
 
       // Sensors
       sensors: "EV3 Sensors",
       touchSensor: "touch sensor [PORT] pressed?",
+      
+      // Color Sensor
       colorSensor: "color sensor [PORT] [MODE]",
-      colorRGB: "color sensor [PORT] RGB [COMPONENT]",
-      ultrasonicSensor: "ultrasonic sensor [PORT] distance cm",
+      colorIs: "color sensor [PORT] is [COLOR]?",
+      colorRGB: "color sensor [PORT] value [COMPONENT]", // Renamed from RGB to include HSV/LAB
+      
+      // Ultrasonic
+      ultrasonicSensor: "ultrasonic sensor [PORT] distance [UNIT]",
+      ultrasonicPresence: "ultrasonic [PORT] other sensor present?",
+      
+      // Gyro
       gyroSensor: "gyro sensor [PORT] [MODE]",
+      gyroReset: "reset gyro [PORT]",
 
       // Infrared
       infrared: "Infrared Sensor",
@@ -95,7 +116,7 @@
       spriteSetSize: "set sprite [SPRITE] size to [SIZE]",
       spriteSetVisible: "set sprite [SPRITE] visible [VISIBLE]",
 
-      // Messages
+      // Messages & Menus
       noCodeGenerated: "No code generated yet!",
       generateFirst: "Generate code first!",
       downloaded: "Downloaded",
@@ -103,19 +124,87 @@
       notConnected: "Not connected",
       uploaderInstructions:
         "Make executable: chmod +x upload_to_ev3.sh\nRun: ./upload_to_ev3.sh <ip>",
+      
+      // Menu Items
+      menu_brake: "brake",
+      menu_coast: "coast",
+      menu_hold: "hold",
+      
+      menu_col_color: "color",
+      menu_col_reflect: "reflected light",
+      menu_col_ambient: "ambient light",
+      
+      menu_unit_cm: "cm",
+      menu_unit_in: "inch",
+      
+      menu_gyro_angle: "angle",
+      menu_gyro_rate: "rate",
+      
+      menu_led_left: "left",
+      menu_led_right: "right",
+      menu_led_both: "both",
+      
+      // Colors
+      col_nocolor: "No Color",
+      col_black: "Black",
+      col_blue: "Blue",
+      col_green: "Green",
+      col_yellow: "Yellow",
+      col_red: "Red",
+      col_white: "White",
+      col_brown: "Brown",
 
       // Modal
       generatedCode: "Generated EV3 Python Code",
       close: "Close",
+
+      // RGB Components
+      rgb_red: "Red",
+      rgb_green: "Green",
+      rgb_blue: "Blue",
+      rgb_h_hue: "HSV: Hue",
+      rgb_h_sat: "HSV: Saturation",
+      rgb_h_val: "HSV: Value",
+      rgb_l_hue: "HLS: Hue",
+      rgb_l_light: "HLS: Lightness",
+      rgb_l_sat: "HLS: Saturation",
+      rgb_lab_l: "Lab: L",
+      rgb_lab_a: "Lab: a",
+      rgb_lab_b: "Lab: b",
+
+      // LED Colors
+      led_black: "Black",
+      led_green: "Green",
+      led_red: "Red",
+      led_orange: "Orange",
+      led_amber: "Amber",
+      led_yellow: "Yellow",
+
+      // Infrared Buttons
+      ir_tl: "Top Left",
+      ir_bl: "Bottom Left",
+      ir_tr: "Top Right",
+      ir_br: "Bottom Right",
+      ir_beacon: "Beacon",
+
+      // EV3 Buttons
+      btn_up: "Up",
+      btn_down: "Down",
+      btn_left: "Left",
+      btn_right: "Right",
+      btn_enter: "Enter",
+      btn_back: "Backspace",
     },
 
     de: {
       // Extension Info
-      extensionName: "Scratch zu EV3",
+      extensionName: "EV3dev2 Steuerung",
 
       // Connection
       connection: "Verbindung",
       setEV3IP: "setze EV3 IP auf [IP]",
+      setCredentials: "Anmeldedaten Benutzer [USER] Passwort [PASS]", // for htpasswd
+      enableStreaming: "Streaming-Modus aktivieren",
       enableStreaming: "Streaming-Modus aktivieren",
       disableStreaming: "Streaming-Modus deaktivieren",
       testConnection: "EV3 Verbindung testen",
@@ -135,15 +224,34 @@
       tankDrive: "Kettenantrieb L:[LEFT] R:[RIGHT] für [ROTATIONS] Umdrehungen",
       motorPosition: "Motor [PORT] Position",
       motorSpeed: "Motor [PORT] Geschwindigkeit",
+      motorIsRunning: "Motor [PORT] läuft gerade?",
+      motorIsStalled: "Motor [PORT] ist blockiert?",
       motorReset: "Motor [PORT] Position zurücksetzen",
+
+      // Servo
+      servo: "Servo",
+      servoRunTo: "Servo [PORT] zu [POS]° Geschw. [SPEED]%",
+
+      // Steering
+      steering: "Lenkung",
+      moveSteering: "lenke [STEERING] Geschw. [SPEED]% für [ROTATIONS] Umdr.",
 
       // Sensors
       sensors: "EV3 Sensoren",
       touchSensor: "Berührungssensor [PORT] gedrückt?",
+      
+      // Color Sensor
       colorSensor: "Farbsensor [PORT] [MODE]",
-      colorRGB: "Farbsensor [PORT] RGB [COMPONENT]",
-      ultrasonicSensor: "Ultraschallsensor [PORT] Entfernung cm",
+      colorIs: "Farbsensor [PORT] ist [COLOR]?",
+      colorRGB: "Farbsensor [PORT] Wert [COMPONENT]",
+      
+      // Ultrasonic
+      ultrasonicSensor: "Ultraschallsensor [PORT] Entfernung [UNIT]",
+      ultrasonicPresence: "Ultraschall [PORT] anderer Sensor erkannt?",
+      
+      // Gyro
       gyroSensor: "Gyrosensor [PORT] [MODE]",
+      gyroReset: "setze Gyrosensor [PORT] zurück",
 
       // Infrared
       infrared: "Infrarotsensor",
@@ -195,7 +303,7 @@
       spriteSetSize: "setze Sprite [SPRITE] Größe auf [SIZE]",
       spriteSetVisible: "setze Sprite [SPRITE] sichtbar [VISIBLE]",
 
-      // Messages
+      // Messages & Menus
       noCodeGenerated: "Noch kein Code generiert!",
       generateFirst: "Generiere zuerst Code!",
       downloaded: "Heruntergeladen",
@@ -204,9 +312,75 @@
       uploaderInstructions:
         "Ausführbar machen: chmod +x upload_to_ev3.sh\nAusführen: ./upload_to_ev3.sh <ip>",
 
+      // Menu Items
+      menu_brake: "bremsen",
+      menu_coast: "ausrollen",
+      menu_hold: "halten",
+      
+      menu_col_color: "Farbe",
+      menu_col_reflect: "Lichtreflexion",
+      menu_col_ambient: "Umgebungslicht",
+      
+      menu_unit_cm: "cm",
+      menu_unit_in: "Zoll",
+      
+      menu_gyro_angle: "Winkel",
+      menu_gyro_rate: "Drehzahl",
+      
+      menu_led_left: "links",
+      menu_led_right: "rechts",
+      menu_led_both: "beide",
+      
+      // Colors
+      col_nocolor: "Keine Farbe",
+      col_black: "Schwarz",
+      col_blue: "Blau",
+      col_green: "Grün",
+      col_yellow: "Gelb",
+      col_red: "Rot",
+      col_white: "Weiß",
+      col_brown: "Braun",
+
       // Modal
       generatedCode: "Generierter EV3 Python Code",
       close: "Schließen",
+
+      // RGB Components
+      rgb_red: "Rot",
+      rgb_green: "Grün",
+      rgb_blue: "Blau",
+      rgb_h_hue: "HSV: Farbton",
+      rgb_h_sat: "HSV: Sättigung",
+      rgb_h_val: "HSV: Hellwert",
+      rgb_l_hue: "HLS: Farbton",
+      rgb_l_light: "HLS: Helligkeit",
+      rgb_l_sat: "HLS: Sättigung",
+      rgb_lab_l: "Lab: L",
+      rgb_lab_a: "Lab: a",
+      rgb_lab_b: "Lab: b",
+
+      // LED Colors
+      led_black: "Schwarz",
+      led_green: "Grün",
+      led_red: "Rot",
+      led_orange: "Orange",
+      led_amber: "Bernstein",
+      led_yellow: "Gelb",
+
+      // Infrared Buttons
+      ir_tl: "Oben Links",
+      ir_bl: "Unten Links",
+      ir_tr: "Oben Rechts",
+      ir_br: "Unten Rechts",
+      ir_beacon: "Bake",
+
+      // EV3 Buttons
+      btn_up: "Oben",
+      btn_down: "Unten",
+      btn_left: "Links",
+      btn_right: "Rechts",
+      btn_enter: "Eingabe",
+      btn_back: "Zurück",
     },
   };
 
@@ -557,10 +731,13 @@
       this.currentScriptId = null;
       this.availableScripts = [];
 
-      // Streaming mode state
+      // Connection setup
       this.ev3Protocol = "https";
       this.ev3IP = "192.168.178.50";
       this.ev3Port = 8443;
+      this.authHeader = null;
+
+      // Streaming mode state
       this.streamingMode = false;
 
       this.sensorCache = {};
@@ -646,6 +823,20 @@
         this.log("Request timeout", { url, timeoutMs });
       }, timeoutMs);
 
+      // --- INJECT AUTH HEADER IF PRESENT ---
+      if (this.authHeader) {
+          if (!options.headers) {
+              options.headers = {};
+          }
+          // Handle both Headers object and plain object literals
+          if (options.headers instanceof Headers) {
+              options.headers.append("Authorization", this.authHeader);
+          } else {
+              options.headers["Authorization"] = this.authHeader;
+          }
+      }
+      // -------------------------------------
+
       try {
         const response = await fetch(url, {
           ...options,
@@ -678,74 +869,39 @@
         color2: "#3373CC",
         color3: "#2E5C8A",
         blocks: [
-          // Connection
-          {
-            blockType: Scratch.BlockType.LABEL,
-            text: t("connection"),
-          },
+          // --- Connection ---
+          { blockType: Scratch.BlockType.LABEL, text: t("connection") },
           {
             opcode: "setConnectionMode",
             blockType: Scratch.BlockType.COMMAND,
             text: "set connection [MODE] IP [IP] port [PORT]",
             arguments: {
-              MODE: {
-                type: Scratch.ArgumentType.STRING,
-                menu: "connectionModes",
-                defaultValue: "https",
-              },
-              IP: {
-                type: Scratch.ArgumentType.STRING,
-                defaultValue: "192.168.178.50",
-              },
-              PORT: {
-                type: Scratch.ArgumentType.NUMBER,
-                defaultValue: 8443,
-              },
+              MODE: { type: Scratch.ArgumentType.STRING, menu: "connectionModes", defaultValue: "https" },
+              IP: { type: Scratch.ArgumentType.STRING, defaultValue: "192.168.178.50" },
+              PORT: { type: Scratch.ArgumentType.NUMBER, defaultValue: 8443 },
             },
           },
           {
-            opcode: "enableStreaming",
+            opcode: "setCredentials",
             blockType: Scratch.BlockType.COMMAND,
-            text: t("enableStreaming"),
+            text: t("setCredentials"),
+            arguments: {
+              USER: { type: Scratch.ArgumentType.STRING, defaultValue: "admin" },
+              PASS: { type: Scratch.ArgumentType.STRING, defaultValue: "password" },
+            },
           },
-          {
-            opcode: "disableStreaming",
-            blockType: Scratch.BlockType.COMMAND,
-            text: t("disableStreaming"),
-          },
-          {
-            opcode: "testConnection",
-            blockType: Scratch.BlockType.REPORTER,
-            text: t("testConnection"),
-          },
+          { opcode: "enableStreaming", blockType: Scratch.BlockType.COMMAND, text: t("enableStreaming") },
+          { opcode: "disableStreaming", blockType: Scratch.BlockType.COMMAND, text: t("disableStreaming") },
+          { opcode: "testConnection", blockType: Scratch.BlockType.REPORTER, text: t("testConnection") },
 
           "---",
 
-          // Transpilation
-          {
-            blockType: Scratch.BlockType.LABEL,
-            text: t("transpilation"),
-          },
-          {
-            opcode: "transpileProject",
-            blockType: Scratch.BlockType.COMMAND,
-            text: t("transpileProject"),
-          },
-          {
-            opcode: "showCode",
-            blockType: Scratch.BlockType.COMMAND,
-            text: t("showCode"),
-          },
-          {
-            opcode: "downloadCode",
-            blockType: Scratch.BlockType.COMMAND,
-            text: t("downloadCode"),
-          },
-          {
-            opcode: "downloadUploader",
-            blockType: Scratch.BlockType.COMMAND,
-            text: t("downloadUploader"),
-          },
+          // --- Transpilation ---
+          { blockType: Scratch.BlockType.LABEL, text: t("transpilation") },
+          { opcode: "transpileProject", blockType: Scratch.BlockType.COMMAND, text: t("transpileProject") },
+          { opcode: "showCode", blockType: Scratch.BlockType.COMMAND, text: t("showCode") },
+          { opcode: "downloadCode", blockType: Scratch.BlockType.COMMAND, text: t("downloadCode") },
+          { opcode: "downloadUploader", blockType: Scratch.BlockType.COMMAND, text: t("downloadUploader") },
 
           "---",
 
@@ -871,24 +1027,15 @@
 
           "---",
 
-          // Motors
-          {
-            blockType: Scratch.BlockType.LABEL,
-            text: t("motors"),
-          },
+          // --- Motors ---
+          { blockType: Scratch.BlockType.LABEL, text: t("motors") },
           {
             opcode: "ev3MotorRun",
             blockType: Scratch.BlockType.COMMAND,
             text: t("motorRun"),
             arguments: {
-              PORT: {
-                type: Scratch.ArgumentType.STRING,
-                menu: "motorPorts",
-              },
-              SPEED: {
-                type: Scratch.ArgumentType.NUMBER,
-                defaultValue: 50,
-              },
+              PORT: { type: Scratch.ArgumentType.STRING, menu: "motorPorts" },
+              SPEED: { type: Scratch.ArgumentType.NUMBER, defaultValue: 50 },
             },
           },
           {
@@ -896,18 +1043,9 @@
             blockType: Scratch.BlockType.COMMAND,
             text: t("motorRunFor"),
             arguments: {
-              PORT: {
-                type: Scratch.ArgumentType.STRING,
-                menu: "motorPorts",
-              },
-              ROTATIONS: {
-                type: Scratch.ArgumentType.NUMBER,
-                defaultValue: 1,
-              },
-              SPEED: {
-                type: Scratch.ArgumentType.NUMBER,
-                defaultValue: 50,
-              },
+              PORT: { type: Scratch.ArgumentType.STRING, menu: "motorPorts" },
+              ROTATIONS: { type: Scratch.ArgumentType.NUMBER, defaultValue: 1 },
+              SPEED: { type: Scratch.ArgumentType.NUMBER, defaultValue: 50 },
             },
           },
           {
@@ -915,15 +1053,8 @@
             blockType: Scratch.BlockType.COMMAND,
             text: t("motorStop"),
             arguments: {
-              PORT: {
-                type: Scratch.ArgumentType.STRING,
-                menu: "motorPorts",
-              },
-              BRAKE: {
-                type: Scratch.ArgumentType.STRING,
-                menu: "brakeMode",
-                defaultValue: "brake",
-              },
+              PORT: { type: Scratch.ArgumentType.STRING, menu: "motorPorts" },
+              BRAKE: { type: Scratch.ArgumentType.STRING, menu: "brakeMode" },
             },
           },
           {
@@ -931,59 +1062,47 @@
             blockType: Scratch.BlockType.COMMAND,
             text: t("tankDrive"),
             arguments: {
-              LEFT: {
-                type: Scratch.ArgumentType.NUMBER,
-                defaultValue: 50,
-              },
-              RIGHT: {
-                type: Scratch.ArgumentType.NUMBER,
-                defaultValue: 50,
-              },
-              ROTATIONS: {
-                type: Scratch.ArgumentType.NUMBER,
-                defaultValue: 1,
-              },
+              LEFT: { type: Scratch.ArgumentType.NUMBER, defaultValue: 50 },
+              RIGHT: { type: Scratch.ArgumentType.NUMBER, defaultValue: 50 },
+              ROTATIONS: { type: Scratch.ArgumentType.NUMBER, defaultValue: 1 },
             },
           },
           {
             opcode: "ev3MotorPosition",
             blockType: Scratch.BlockType.REPORTER,
             text: t("motorPosition"),
-            arguments: {
-              PORT: {
-                type: Scratch.ArgumentType.STRING,
-                menu: "motorPorts",
-              },
-            },
+            arguments: { PORT: { type: Scratch.ArgumentType.STRING, menu: "motorPorts" } },
           },
           {
             opcode: "ev3MotorSpeed",
             blockType: Scratch.BlockType.REPORTER,
             text: t("motorSpeed"),
-            arguments: {
-              PORT: {
-                type: Scratch.ArgumentType.STRING,
-                menu: "motorPorts",
-              },
-            },
+            arguments: { PORT: { type: Scratch.ArgumentType.STRING, menu: "motorPorts" } },
+          },
+          {
+            opcode: "ev3MotorIsRunning",
+            blockType: Scratch.BlockType.BOOLEAN,
+            text: t("motorIsRunning"),
+            arguments: { PORT: { type: Scratch.ArgumentType.STRING, menu: "motorPorts" } },
+          },
+          {
+            opcode: "ev3MotorIsStalled",
+            blockType: Scratch.BlockType.BOOLEAN,
+            text: t("motorIsStalled"),
+            arguments: { PORT: { type: Scratch.ArgumentType.STRING, menu: "motorPorts" } },
           },
           {
             opcode: "ev3MotorReset",
             blockType: Scratch.BlockType.COMMAND,
             text: t("motorReset"),
-            arguments: {
-              PORT: {
-                type: Scratch.ArgumentType.STRING,
-                menu: "motorPorts",
-              },
-            },
+            arguments: { PORT: { type: Scratch.ArgumentType.STRING, menu: "motorPorts" } },
           },
 
           // Servo Motor
           {
             opcode: "servoRunToPosition",
             blockType: Scratch.BlockType.COMMAND,
-            text: "servo [PORT] move to position [POS] speed [SPEED]%",
+            text: t("servoRunTo"),
             arguments: {
               PORT: { type: Scratch.ArgumentType.STRING, menu: "motorPorts" },
               POS: { type: Scratch.ArgumentType.NUMBER, defaultValue: 90 },
@@ -995,7 +1114,7 @@
           {
             opcode: "moveSteering",
             blockType: Scratch.BlockType.COMMAND,
-            text: "steer [STEERING] speed [SPEED]% for [ROTATIONS] rotations",
+            text: t("moveSteering"),
             arguments: {
               STEERING: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 },
               SPEED: { type: Scratch.ArgumentType.NUMBER, defaultValue: 50 },
@@ -1006,109 +1125,95 @@
           "---",
 
           // Sensors
-          {
-            blockType: Scratch.BlockType.LABEL,
-            text: t("sensors"),
-          },
+          { blockType: Scratch.BlockType.LABEL, text: t("sensors") },
           {
             opcode: "ev3TouchSensor",
             blockType: Scratch.BlockType.BOOLEAN,
             text: t("touchSensor"),
-            arguments: {
-              PORT: {
-                type: Scratch.ArgumentType.STRING,
-                menu: "sensorPorts",
-              },
-            },
+            arguments: { PORT: { type: Scratch.ArgumentType.STRING, menu: "sensorPorts" } },
           },
+          // Color Sensor
           {
             opcode: "ev3ColorSensor",
             blockType: Scratch.BlockType.REPORTER,
             text: t("colorSensor"),
             arguments: {
-              PORT: {
-                type: Scratch.ArgumentType.STRING,
-                menu: "sensorPorts",
-              },
-              MODE: {
-                type: Scratch.ArgumentType.STRING,
-                menu: "colorMode",
-              },
+              PORT: { type: Scratch.ArgumentType.STRING, menu: "sensorPorts" },
+              MODE: { type: Scratch.ArgumentType.STRING, menu: "colorMode" },
             },
           },
+          // NEW: Boolean "Elevator" for Color
+          {
+            opcode: "ev3ColorIsColor",
+            blockType: Scratch.BlockType.BOOLEAN,
+            text: t("colorIs"),
+            arguments: {
+              PORT: { type: Scratch.ArgumentType.STRING, menu: "sensorPorts" },
+              COLOR: { type: Scratch.ArgumentType.STRING, menu: "ev3Colors" },
+            },
+          },
+          // Expanded RGB/Component block
           {
             opcode: "ev3ColorRGB",
             blockType: Scratch.BlockType.REPORTER,
             text: t("colorRGB"),
             arguments: {
-              PORT: {
-                type: Scratch.ArgumentType.STRING,
-                menu: "sensorPorts",
-              },
-              COMPONENT: {
-                type: Scratch.ArgumentType.STRING,
-                menu: "rgbComponent",
-              },
+              PORT: { type: Scratch.ArgumentType.STRING, menu: "sensorPorts" },
+              COMPONENT: { type: Scratch.ArgumentType.STRING, menu: "rgbComponent" },
             },
           },
+          
+          // Ultrasonic
           {
             opcode: "ev3UltrasonicSensor",
             blockType: Scratch.BlockType.REPORTER,
             text: t("ultrasonicSensor"),
             arguments: {
-              PORT: {
-                type: Scratch.ArgumentType.STRING,
-                menu: "sensorPorts",
-              },
+              PORT: { type: Scratch.ArgumentType.STRING, menu: "sensorPorts" },
+              UNIT: { type: Scratch.ArgumentType.STRING, menu: "distanceUnit" },
             },
           },
+          {
+            opcode: "ev3UltrasonicPresence",
+            blockType: Scratch.BlockType.BOOLEAN,
+            text: t("ultrasonicPresence"),
+            arguments: { PORT: { type: Scratch.ArgumentType.STRING, menu: "sensorPorts" } },
+          },
+
+          // Gyro
           {
             opcode: "ev3GyroSensor",
             blockType: Scratch.BlockType.REPORTER,
             text: t("gyroSensor"),
             arguments: {
-              PORT: {
-                type: Scratch.ArgumentType.STRING,
-                menu: "sensorPorts",
-              },
-              MODE: {
-                type: Scratch.ArgumentType.STRING,
-                menu: "gyroMode",
-              },
+              PORT: { type: Scratch.ArgumentType.STRING, menu: "sensorPorts" },
+              MODE: { type: Scratch.ArgumentType.STRING, menu: "gyroMode" },
             },
+          },
+          {
+            opcode: "ev3GyroReset",
+            blockType: Scratch.BlockType.COMMAND,
+            text: t("gyroReset"),
+            arguments: { PORT: { type: Scratch.ArgumentType.STRING, menu: "sensorPorts" } },
           },
 
           "---",
 
-          // Infrared
-          {
-            blockType: Scratch.BlockType.LABEL,
-            text: t("infrared"),
-          },
+          // --- Infrared ---
+          { blockType: Scratch.BlockType.LABEL, text: t("infrared") },
           {
             opcode: "ev3InfraredProximity",
             blockType: Scratch.BlockType.REPORTER,
             text: t("irProximity"),
-            arguments: {
-              PORT: {
-                type: Scratch.ArgumentType.STRING,
-                menu: "sensorPorts",
-              },
-            },
+            arguments: { PORT: { type: Scratch.ArgumentType.STRING, menu: "sensorPorts" } },
           },
           {
             opcode: "ev3InfraredBeaconHeading",
             blockType: Scratch.BlockType.REPORTER,
             text: t("irBeaconHeading"),
             arguments: {
-              PORT: {
-                type: Scratch.ArgumentType.STRING,
-                menu: "sensorPorts",
-              },
-              CHANNEL: {
-                type: Scratch.ArgumentType.NUMBER,
-                defaultValue: 1,
-              },
+              PORT: { type: Scratch.ArgumentType.STRING, menu: "sensorPorts" },
+              CHANNEL: { type: Scratch.ArgumentType.NUMBER, defaultValue: 1 },
             },
           },
           {
@@ -1116,14 +1221,8 @@
             blockType: Scratch.BlockType.REPORTER,
             text: t("irBeaconDistance"),
             arguments: {
-              PORT: {
-                type: Scratch.ArgumentType.STRING,
-                menu: "sensorPorts",
-              },
-              CHANNEL: {
-                type: Scratch.ArgumentType.NUMBER,
-                defaultValue: 1,
-              },
+              PORT: { type: Scratch.ArgumentType.STRING, menu: "sensorPorts" },
+              CHANNEL: { type: Scratch.ArgumentType.NUMBER, defaultValue: 1 },
             },
           },
           {
@@ -1131,20 +1230,13 @@
             blockType: Scratch.BlockType.BOOLEAN,
             text: t("irRemoteButton"),
             arguments: {
-              PORT: {
-                type: Scratch.ArgumentType.STRING,
-                menu: "sensorPorts",
-              },
-              CHANNEL: {
-                type: Scratch.ArgumentType.NUMBER,
-                defaultValue: 1,
-              },
-              BUTTON: {
-                type: Scratch.ArgumentType.STRING,
-                menu: "irButtons",
-              },
+              PORT: { type: Scratch.ArgumentType.STRING, menu: "sensorPorts" },
+              CHANNEL: { type: Scratch.ArgumentType.NUMBER, defaultValue: 1 },
+              BUTTON: { type: Scratch.ArgumentType.STRING, menu: "irButtons" },
             },
           },
+
+          "---",
 
           // NXT Sound Sensor
           {
@@ -1179,12 +1271,7 @@
             opcode: "ev3ButtonPressed",
             blockType: Scratch.BlockType.BOOLEAN,
             text: t("buttonPressed"),
-            arguments: {
-              BUTTON: {
-                type: Scratch.ArgumentType.STRING,
-                menu: "buttons",
-              },
-            },
+            arguments: { BUTTON: { type: Scratch.ArgumentType.STRING, menu: "buttons" } },
           },
 
           "---",
@@ -1556,41 +1643,103 @@
             items: ["1", "2", "3", "4"],
           },
           brakeMode: {
-            items: ["brake", "coast", "hold"],
+            items: [
+              { text: t("menu_brake"), value: "brake" },
+              { text: t("menu_coast"), value: "coast" },
+              { text: t("menu_hold"), value: "hold" },
+            ],
           },
           colorMode: {
             items: [
-              "color",
-              "reflected_light_intensity",
-              "ambient_light_intensity",
+              { text: t("menu_col_color"), value: "color" },
+              { text: t("menu_col_reflect"), value: "reflected_light_intensity" },
+              { text: t("menu_col_ambient"), value: "ambient_light_intensity" },
             ],
           },
-          rgbComponent: {
-            items: ["red", "green", "blue"],
+          // Full EV3 Color Palette
+          ev3Colors: {
+            items: [
+                { text: t("col_nocolor"), value: "0" },
+                { text: t("col_black"), value: "1" },
+                { text: t("col_blue"), value: "2" },
+                { text: t("col_green"), value: "3" },
+                { text: t("col_yellow"), value: "4" },
+                { text: t("col_red"), value: "5" },
+                { text: t("col_white"), value: "6" },
+                { text: t("col_brown"), value: "7" }
+            ]
           },
+          // Extended RGB/HSV/LAB components
+          rgbComponent: {
+            items: [
+              { text: t("rgb_red"), value: "red" },
+              { text: t("rgb_green"), value: "green" },
+              { text: t("rgb_blue"), value: "blue" },
+              // Separator for clarity (optional, Scratch handles lists linearly)
+              { text: t("rgb_h_hue"), value: "h-hue" },
+              { text: t("rgb_h_sat"), value: "h-saturation" },
+              { text: t("rgb_h_val"), value: "h-value" },
+              
+              { text: t("rgb_l_hue"), value: "l-hue" },
+              { text: t("rgb_l_light"), value: "l-lightness" },
+              { text: t("rgb_l_sat"), value: "l-saturation" },
+              
+              { text: t("rgb_lab_l"), value: "lab-l" },
+              { text: t("rgb_lab_a"), value: "lab-a" },
+              { text: t("rgb_lab_b"), value: "lab-b" },
+            ],
+          },
+
           gyroMode: {
-            items: ["angle", "rate"],
+            items: [
+              { text: t("menu_gyro_angle"), value: "angle" },
+              { text: t("menu_gyro_rate"), value: "rate" },
+            ],
+          },
+          distanceUnit: {
+             items: [
+                 { text: t("menu_unit_cm"), value: "cm" },
+                 { text: t("menu_unit_in"), value: "in" }
+             ]
           },
           ledColors: {
-            items: ["BLACK", "GREEN", "RED", "ORANGE", "AMBER", "YELLOW"],
+            items: [
+              { text: t("led_black"), value: "BLACK" },
+              { text: t("led_green"), value: "GREEN" },
+              { text: t("led_red"), value: "RED" },
+              { text: t("led_orange"), value: "ORANGE" },
+              { text: t("led_amber"), value: "AMBER" },
+              { text: t("led_yellow"), value: "YELLOW" },
+            ],
           },
           ledSides: {
-            items: ["LEFT", "RIGHT", "BOTH"],
+            items: [
+              { text: t("menu_led_left"), value: "LEFT" },
+              { text: t("menu_led_right"), value: "RIGHT" },
+              { text: t("menu_led_both"), value: "BOTH" },
+            ],
           },
           ledAnimations: {
             items: ["police", "flash", "rainbow", "cycle"],
           },
           irButtons: {
             items: [
-              "top_left",
-              "bottom_left",
-              "top_right",
-              "bottom_right",
-              "beacon",
+              { text: t("ir_tl"), value: "top_left" },
+              { text: t("ir_bl"), value: "bottom_left" },
+              { text: t("ir_tr"), value: "top_right" },
+              { text: t("ir_br"), value: "bottom_right" },
+              { text: t("ir_beacon"), value: "beacon" },
             ],
           },
           buttons: {
-            items: ["up", "down", "left", "right", "enter", "backspace"],
+            items: [
+              { text: t("btn_up"), value: "up" },
+              { text: t("btn_down"), value: "down" },
+              { text: t("btn_left"), value: "left" },
+              { text: t("btn_right"), value: "right" },
+              { text: t("btn_enter"), value: "enter" },
+              { text: t("btn_back"), value: "backspace" },
+            ],
           },
           soundMode: { items: ["db", "dba"] },
           lightMode: { items: ["reflect", "ambient"] },
@@ -1625,6 +1774,21 @@
       console.log(
         `Connection: ${this.ev3Protocol}://${this.ev3IP}:${this.ev3Port}`,
       );
+    }
+
+    setCredentials(args) {
+        const user = args.USER;
+        const pass = args.PASS;
+        
+        if (user && user.trim() !== "") {
+            // Create Base64 encoded auth string standard for HTTP Basic Auth
+            // btoa() creates a base-64 encoded ASCII string
+            this.authHeader = "Basic " + btoa(user + ":" + pass);
+            console.log("EV3 Credentials set for user:", user);
+        } else {
+            this.authHeader = null;
+            console.log("EV3 Credentials cleared");
+        }
     }
 
     enableStreaming() {
@@ -2932,6 +3096,17 @@
       this.sendCommand("motor_stop", { port: args.PORT, brake: args.BRAKE });
     }
 
+    async ev3MotorIsRunning(args) {
+        const data = await this.getSensorData(`/motor/state/${args.PORT}`);
+        // check if 'running' is in state flags list
+        return data.value && data.value.includes("running");
+    }
+
+    async ev3MotorIsStalled(args) {
+        const data = await this.getSensorData(`/motor/state/${args.PORT}`);
+        return data.value && data.value.includes("stalled");
+    }
+
     ev3TankDrive(args) {
       this.sendCommand(
         "tank_drive",
@@ -3016,16 +3191,48 @@
       return data.value || 0;
     }
 
+    async ev3ColorIsColor(args) {
+        // Read color sensor in 'color' mode (integer)
+        const data = await this.getSensorData(`/sensor/color/${args.PORT}/color`);
+        const detectedColor = data.value || 0;
+        return detectedColor == args.COLOR; // Compare integer values
+    }
+
     async ev3ColorRGB(args) {
-      const data = await this.getSensorData(
-        `/sensor/color_rgb/${args.PORT}/${args.COMPONENT}`,
-      );
-      return data.value || 0;
+        const comp = args.COMPONENT;
+        // Determine mode based on component
+        let mode = "rgb";
+        let idx = 0;
+        
+        if (["red", "green", "blue"].includes(comp)) {
+            mode = "rgb";
+            idx = ["red", "green", "blue"].indexOf(comp);
+        } else if (comp.startsWith("h-")) {
+            mode = "hsv";
+            idx = ["h-hue", "h-saturation", "h-value"].indexOf(comp);
+        } else if (comp.startsWith("l-")) {
+            mode = "hls";
+            idx = ["l-hue", "l-lightness", "l-saturation"].indexOf(comp);
+        } else if (comp.startsWith("lab-")) {
+            mode = "lab";
+            idx = ["lab-l", "lab-a", "lab-b"].indexOf(comp);
+        }
+
+        const data = await this.getSensorData(`/sensor/color_extended/${args.PORT}/${mode}`);
+        // server should return array in data.value
+        return (data.value && data.value[idx]) || 0;
     }
 
     async ev3UltrasonicSensor(args) {
-      const data = await this.getSensorData(`/sensor/ultrasonic/${args.PORT}`);
-      return data.value || 0;
+        // Support cm and inches
+        const mode = args.UNIT === "in" ? "distance_inches" : "distance_centimeters";
+        const data = await this.getSensorData(`/sensor/ultrasonic/${args.PORT}/${mode}`);
+        return data.value || 0;
+    }
+
+    async ev3UltrasonicPresence(args) {
+        const data = await this.getSensorData(`/sensor/ultrasonic/${args.PORT}/other_sensor_present`);
+        return data.value || false;
     }
 
     async ev3GyroSensor(args) {
@@ -3033,6 +3240,10 @@
         `/sensor/gyro/${args.PORT}/${args.MODE}`,
       );
       return data.value || 0;
+    }
+
+    ev3GyroReset(args) {
+        this.sendCommand("gyro_reset", { port: args.PORT });
     }
 
     // Infrared
@@ -4239,7 +4450,14 @@
         const ev3Color = color === "OFF" ? "BLACK" : color;
         this.addLine('leds.set_color("LEFT", "' + ev3Color + '")');
         this.addLine('leds.set_color("RIGHT", "' + ev3Color + '")');
-      } else if (opcode === "scratchtoev3_ev3SetLEDSide") {
+      } else if (opcode === "scratchtoev3_ev3ColorIsColor") {
+          const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
+          const targetColor = this.getInputValue(block, "COLOR", blocks);
+          
+          return `(get_sensor("${port}", "color").color == ${targetColor} if get_sensor("${port}", "color") else False)`;
+      }
+      
+      else if (opcode === "scratchtoev3_ev3SetLEDSide") {
         const side = this.getInputValue(block, "SIDE", blocks).replace(
           /"/g,
           "",
@@ -4740,6 +4958,26 @@
           port +
           '", "touch") else False)'
         );
+      } else if (opcode === "scratchtoev3_ev3ColorRGB") {
+          const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
+          const comp = this.getInputValue(block, "COMPONENT", blocks).replace(/"/g, "");
+          
+          let pyCode = "";
+          // Map component to ev3dev2 property and tuple index
+          if (comp === 'red') pyCode = `.rgb[0]`;
+          else if (comp === 'green') pyCode = `.rgb[1]`;
+          else if (comp === 'blue') pyCode = `.rgb[2]`;
+          else if (comp === 'h-hue') pyCode = `.hsv[0]`;
+          else if (comp === 'h-saturation') pyCode = `.hsv[1]`;
+          else if (comp === 'h-value') pyCode = `.hsv[2]`;
+          else if (comp === 'l-hue') pyCode = `.hls[0]`;
+          else if (comp === 'l-lightness') pyCode = `.hls[1]`;
+          else if (comp === 'l-saturation') pyCode = `.hls[2]`;
+          else if (comp === 'lab-l') pyCode = `.lab[0]`;
+          else if (comp === 'lab-a') pyCode = `.lab[1]`;
+          else if (comp === 'lab-b') pyCode = `.lab[2]`;
+          
+          return `(get_sensor("${port}", "color")${pyCode} if get_sensor("${port}", "color") else 0)`;
       } else if (block.opcode === "scratchtoev3_ev3ColorSensor") {
         const port = this.getInputValue(block, "PORT", blocks).replace(
           /"/g,
@@ -4790,7 +5028,13 @@
           port +
           '", "ultrasonic") else 0)'
         );
-      } else if (block.opcode === "scratchtoev3_ev3GyroSensor") {
+      } else if (opcode === "scratchtoev3_ev3UltrasonicPresence") {
+          const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
+          return `(get_sensor("${port}", "ultrasonic").other_sensor_present if get_sensor("${port}", "ultrasonic") else False)`;
+      }
+      
+      
+      else if (block.opcode === "scratchtoev3_ev3GyroSensor") {
         const port = this.getInputValue(block, "PORT", blocks).replace(
           /"/g,
           "",
@@ -4809,7 +5053,13 @@
           port +
           '", "gyro") else 0)'
         );
+      } else if (opcode === "scratchtoev3_ev3GyroReset") {
+          const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
+          this.addLine(`s = get_sensor("${port}", "gyro")`);
+          this.addLine(`if s: s.reset()`); 
       }
+
+
       // Infrared reporters
       else if (block.opcode === "scratchtoev3_ev3InfraredProximity") {
         const port = this.getInputValue(block, "PORT", blocks).replace(
@@ -4908,6 +5158,13 @@
           port +
           '") else 0)'
         );
+      } else if (opcode === "scratchtoev3_ev3MotorIsRunning") {
+          const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
+          return `("running" in get_motor("${port}").state if get_motor("${port}") else False)`;
+      }
+      else if (opcode === "scratchtoev3_ev3MotorIsStalled") {
+          const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
+          return `("stalled" in get_motor("${port}").state if get_motor("${port}") else False)`;
       }
       // Battery
       else if (block.opcode === "scratchtoev3_ev3BatteryLevel") {

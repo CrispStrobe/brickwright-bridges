@@ -101,6 +101,9 @@ menu_scroll_offset = 0
 # UI Mode
 ui_mode = "status"  # "status" or "scripts"
 
+# === AUTHENTICATION ===
+AUTH_HEADER_EXPECTED = None
+
 # ============================================================================
 # SIGNAL HANDLERS
 # ============================================================================
@@ -861,6 +864,29 @@ def safe_motor_command(motor, command_func, error_msg="Motor operation failed"):
 
 class BridgeHandler(http.server.BaseHTTPRequestHandler):
 
+    def check_authentication(self):
+        """
+        Check if the request has valid Basic Auth credentials.
+        Returns True if auth is valid or not required.
+        Sends 401 response and returns False if invalid.
+        """
+        global AUTH_HEADER_EXPECTED
+        
+        # If no auth is configured on the server, allow everything
+        if AUTH_HEADER_EXPECTED is None:
+            return True
+            
+        # Get the Authorization header
+        auth_header = self.headers.get("Authorization")
+        
+        if auth_header == AUTH_HEADER_EXPECTED:
+            return True
+            
+        # Auth failed
+        log("Authentication failed from {0}".format(self.client_address[0]))
+        self._send_json({"status": "error", "msg": "Unauthorized"}, 401)
+        return False
+
     def log_message(self, format, *args):
         """Log ALL HTTP requests with connection details"""
         global connection_counter
@@ -908,6 +934,11 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         """Handle POST requests"""
+
+        # === Check Auth first ===
+        if not self.check_authentication():
+            return
+        
         content_length = int(self.headers["Content-Length"])
         post_data = self.rfile.read(content_length)
 
@@ -1651,6 +1682,10 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         """Handle GET requests (sensor reads, status etc)"""
         vlog("GET request", {"path": self.path})
+        
+        # === Check Auth first ===
+        if not self.check_authentication():
+            return
 
         try:
             # Status
@@ -2645,12 +2680,14 @@ def run_server_on_port(port, use_ssl=False):
 
 
 def main():
-    global VERBOSE, PORT, USE_SSL, SSL_CERT, SSL_KEY
+    global VERBOSE, PORT, USE_SSL, SSL_CERT, SSL_KEY, AUTH_HEADER_EXPECTED
 
     parser = argparse.ArgumentParser(description="EV3 Bridge Server v2.3")
     parser.add_argument("--port", type=int, default=None, help="Custom port (overrides defaults)")
     parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--no-ui", action="store_true")
+    parser.add_argument("--auth", type=str, default=None, help="Enable Basic Auth (format: username:password)")
+
     parser.add_argument("--http-only", action="store_true", help="Disable HTTPS (HTTP only)")
     parser.add_argument("--https-only", action="store_true", help="Disable HTTP (HTTPS only)")
     parser.add_argument("--cert", type=str, default="ev3.crt")
@@ -2661,6 +2698,18 @@ def main():
     VERBOSE = args.verbose
     SSL_CERT = args.cert
     SSL_KEY = args.key
+
+    # === Setup Authentication ===
+    if args.auth:
+        if ":" in args.auth:
+            # Create the expected header value: "Basic <base64>"
+            # We assume ASCII for user:pass as per HTTP standard
+            b64_creds = base64.b64encode(args.auth.encode('utf-8')).decode('utf-8')
+            AUTH_HEADER_EXPECTED = "Basic " + b64_creds
+            print("Authentication ENABLED. User: " + args.auth.split(":")[0])
+        else:
+            print("Error: --auth format must be username:password")
+            sys.exit(1)
 
     print("=" * 50)
     print("EV3 BRIDGE SERVER v2.3 with Script Manager")
