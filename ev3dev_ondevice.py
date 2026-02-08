@@ -39,6 +39,7 @@ from ev3dev2.motor import (
     MoveSteering,
 )
 from ev3dev2.sensor import INPUT_1, INPUT_2, INPUT_3, INPUT_4
+from ev3dev2.port import LegoPort
 from ev3dev2.sensor.lego import (
     TouchSensor,
     ColorSensor,
@@ -1081,6 +1082,44 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                     self._send_json({"status": "ok", "msg": "Script deleted"})
                 else:
                     self._send_json({"status": "error", "msg": "Delete failed"}, 500)
+
+            # === PORT CONFIGURATION (Fix for old NXT Sensors) ===
+            elif command == "configure_port":
+                port_num = str(data["port"])
+                device_type = data["device"]
+                
+                # Map "1" -> "in1", etc.
+                address = "in" + port_num
+                
+                try:
+                    p = LegoPort(address)
+                    
+                    if device_type == "lego-nxt-touch":
+                        p.mode = "nxt-analog"
+                        p.set_device = "lego-nxt-touch"
+                        vlog(f"Configured Port {port_num} for NXT Touch")
+                        
+                    elif device_type == "lego-nxt-light":
+                        p.mode = "nxt-analog"
+                        p.set_device = "lego-nxt-light"
+                        vlog(f"Configured Port {port_num} for NXT Light")
+                        
+                    elif device_type == "lego-nxt-sound":
+                        p.mode = "nxt-analog"
+                        p.set_device = "lego-nxt-sound"
+                        vlog(f"Configured Port {port_num} for NXT Sound")
+                        
+                    elif device_type == "reset":
+                        p.mode = "auto"
+                        vlog(f"Reset Port {port_num} to Auto")
+                        
+                    # Give the kernel a moment to load the driver
+                    time.sleep(0.5)
+                    self._send_json({"status": "ok"})
+                    
+                except Exception as e:
+                    log(f"Port config failed for {address}", str(e))
+                    self._send_json({"status": "error", "msg": str(e)})
 
             # === MOTORS ===
             elif command == "motor_run":

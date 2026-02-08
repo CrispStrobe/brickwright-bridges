@@ -62,6 +62,12 @@
       // Sensors
       sensors: "EV3 Sensors",
       touchSensor: "touch sensor [PORT] pressed?",
+
+      configurePort: "force port [PORT] to use [DEVICE]",
+      dev_nxt_touch: "NXT Touch Sensor",
+      dev_nxt_light: "NXT Light Sensor",
+      dev_nxt_sound: "NXT Sound Sensor",
+      dev_auto: "Auto-Detect (Reset)",
       
       // Color Sensor
       colorSensor: "color sensor [PORT] [MODE]",
@@ -255,6 +261,12 @@
       // Sensors
       sensors: "EV3 Sensoren",
       touchSensor: "Berührungssensor [PORT] gedrückt?",
+
+      configurePort: "Zwinge Port [PORT] auf [DEVICE]",
+      dev_nxt_touch: "NXT Berührungssensor",
+      dev_nxt_light: "NXT Lichtsensor",
+      dev_nxt_sound: "NXT Geräuschsensor",
+      dev_auto: "Auto-Erkennung (Reset)",
       
       // Color Sensor
       colorSensor: "Farbsensor [PORT] [MODE]",
@@ -1207,6 +1219,17 @@
             text: t("touchSensor"),
             arguments: { PORT: { type: Scratch.ArgumentType.STRING, menu: "sensorPorts" } },
           },
+          {
+            opcode: "ev3ConfigurePort",
+            blockType: Scratch.BlockType.COMMAND,
+            text: t("configurePort"),
+            arguments: {
+              PORT: { type: Scratch.ArgumentType.STRING, menu: "sensorPorts" },
+              DEVICE: { type: Scratch.ArgumentType.STRING, menu: "legacyDevices" },
+            },
+          },
+
+
           // Color Sensor
           {
             opcode: "ev3ColorSensor",
@@ -1815,6 +1838,14 @@
               { text: t("btn_enter"), value: "enter" },
               { text: t("btn_back"), value: "backspace" },
             ],
+          },
+          legacyDevices: {
+            items: [
+              { text: t("dev_auto"), value: "reset" },
+              { text: t("dev_nxt_touch"), value: "lego-nxt-touch" },
+              { text: t("dev_nxt_light"), value: "lego-nxt-light" },
+              { text: t("dev_nxt_sound"), value: "lego-nxt-sound" },
+            ]
           },
           soundMode: { items: ["db", "dba"] },
           lightMode: { items: ["reflect", "ambient"] },
@@ -3307,6 +3338,12 @@
     async ev3TouchSensor(args) {
       const data = await this.getSensorData(`/sensor/touch/${args.PORT}`);
       return data.value || false;
+    }
+    ev3ConfigurePort(args) {
+      this.sendCommand("configure_port", {
+        port: args.PORT,
+        device: args.DEVICE,
+      });
     }
 
     async ev3ColorSensor(args) {
@@ -5155,7 +5192,24 @@
           port +
           '", "touch") else False)'
         );
-      } else if (opcode === "scratchtoev3_ev3ColorRGB") {
+      } else if (opcode === "scratchtoev3_ev3ConfigurePort") {
+        const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
+        const device = this.getInputValue(block, "DEVICE", blocks);
+        
+        this.addLine(`from ev3dev2.port import LegoPort`);
+        this.addLine(`import time`);
+        this.addLine(`p = LegoPort("in${port}")`);
+        
+        if (device === "reset") {
+             this.addLine(`p.mode = "auto"`);
+        } else {
+             this.addLine(`p.mode = "nxt-analog"`);
+             this.addLine(`p.set_device = "${device}"`);
+        }
+        this.addLine(`time.sleep(0.5)`); // Wait for driver load
+      }
+      
+      else if (opcode === "scratchtoev3_ev3ColorRGB") {
           const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
           const comp = this.getInputValue(block, "COMPONENT", blocks).replace(/"/g, "");
           
