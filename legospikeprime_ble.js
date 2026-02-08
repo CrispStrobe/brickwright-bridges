@@ -1,3 +1,8 @@
+// Name: LEGO Spike Prime (BLE Alt)
+// ID: CrispStrobe/legospikeprime_ble
+// Description: Alternative BLE control for Spike Prime.
+// By: CrispStrobe <https://github.com/CrispStrobe>
+// License: MPL-2.0
 (function (Scratch) {
   "use strict";
 

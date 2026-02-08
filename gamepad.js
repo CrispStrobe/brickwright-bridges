@@ -1,3 +1,8 @@
+// Name: Gamepad
+// ID: CrispStrobe/gamepad
+// Description: Use game controllers to control your project.
+// By: CrispStrobe <https://github.com/CrispStrobe>
+// License: MPL-2.0
 (function (Scratch) {
   "use strict";
 

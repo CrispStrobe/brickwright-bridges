@@ -1,3 +1,8 @@
+// Name: LEGO NXT Universal
+// ID: CrispStrobe/legonxt_transpile_universal
+// Description: Universal connection (BTC, Scratch Link, Bridge). Supports both Live Streaming and NXC Compilation.
+// By: CrispStrobe <https://github.com/CrispStrobe>
+// License: MPL-2.0
 (function (Scratch) {
   "use strict";
 

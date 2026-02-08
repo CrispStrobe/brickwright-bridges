@@ -1,3 +1,8 @@
+// Name: Planète Maths
+// ID: CrispStrobe/planetemaths
+// Description: Additional advanced math operations.
+// By: CrispStrobe <https://github.com/CrispStrobe>
+// License: MPL-2.0
 (function (Scratch) {
   "use strict";
 

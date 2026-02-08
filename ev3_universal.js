@@ -1,3 +1,8 @@
+// Name: LEGO EV3 Universal
+// ID: CrispStrobe/ev3_universal
+// Description: Universal control for LEGO EV3 Mindstorms (Direct/LMS).
+// By: CrispStrobe <https://github.com/CrispStrobe>
+// License: MPL-2.0
 (function (Scratch) {
   "use strict";
 

@@ -1,3 +1,8 @@
+// Name: LEGO Boost Universal
+// ID: CrispStrobe/legoboost_universal
+// Description: Universal control for LEGO Boost (BLE/Scratch Link/Bridge).
+// By: CrispStrobe <https://github.com/CrispStrobe>
+// License: MPL-2.0
 (function (Scratch) {
   "use strict";
 

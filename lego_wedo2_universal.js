@@ -1,3 +1,8 @@
+// Name: LEGO WeDo 2.0 Universal
+// ID: CrispStrobe/lego_wedo2_universal
+// Description: Universal control for LEGO WeDo 2.0 sets (BLE/Scratch Link).
+// By: CrispStrobe <https://github.com/CrispStrobe>
+// License: MPL-2.0
 (function (Scratch) {
   "use strict";
 

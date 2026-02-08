@@ -1,3 +1,8 @@
+// Name: LEGO EV3 LMS Transpiler
+// ID: CrispStrobe/ev3_lms_transpile
+// Description: Supports both Live Streaming and transpiling to LMS bytecode for original EV3 firmware.
+// By: CrispStrobe <https://github.com/CrispStrobe>
+// License: MPL-2.0
 (function (Scratch) {
   "use strict";
 
