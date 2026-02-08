@@ -17,6 +17,7 @@
 
       // Connection
       connection: "Connection",
+      setConnection: "set connection [MODE] IP [IP] port [PORT]",
       setEV3IP: "set EV3 IP to [IP]",
       setCredentials: "set credentials user [USER] password [PASS]", // for htpasswd
       
@@ -35,6 +36,10 @@
       motors: "EV3 Motors",
       motorRun: "motor [PORT] run at [SPEED]%",
       motorRunFor: "motor [PORT] run [ROTATIONS] rotations at [SPEED]%",
+      motorRunTimed: "motor [PORT] run for [SECONDS] seconds at [SPEED]%",
+      motorRunToAbs: "motor [PORT] go to position [POS]° at [SPEED]%",
+      motorRunDegrees: "motor [PORT] run [DEGREES] degrees at [SPEED]%",
+      
       motorStop: "motor [PORT] stop [BRAKE]",
       tankDrive: "tank drive L:[LEFT] R:[RIGHT] for [ROTATIONS] rotations",
       motorPosition: "motor [PORT] position",
@@ -42,10 +47,13 @@
       motorIsRunning: "motor [PORT] is running?",
       motorIsStalled: "motor [PORT] is stalled?",
       motorReset: "reset motor [PORT] position",
+      dcMotorRun: "DC motor [PORT] power [SPEED]%",
+      dcMotorStop: "DC motor [PORT] stop",
       
       // Servo
       servo: "Servo",
       servoRunTo: "servo [PORT] move to [POS]° speed [SPEED]%",
+      servoStop: "servo [PORT] stop",
 
       // Steering
       steering: "Steering",
@@ -202,6 +210,7 @@
 
       // Connection
       connection: "Verbindung",
+      setConnection: "Verbindung [MODE] IP [IP] Port [PORT]",
       setEV3IP: "setze EV3 IP auf [IP]",
       setCredentials: "Anmeldedaten Benutzer [USER] Passwort [PASS]", // for htpasswd
       enableStreaming: "Streaming-Modus aktivieren",
@@ -221,16 +230,23 @@
       motorRun: "Motor [PORT] läuft mit [SPEED]%",
       motorRunFor: "Motor [PORT] läuft [ROTATIONS] Umdrehungen mit [SPEED]%",
       motorStop: "Motor [PORT] stopp [BRAKE]",
+      motorRunTimed: "Motor [PORT] läuft [SECONDS] Sekunden mit [SPEED]%",
+      motorRunToAbs: "Motor [PORT] gehe zu Position [POS]° mit [SPEED]%",
+      motorRunDegrees: "Motor [PORT] läuft [DEGREES] Grad mit [SPEED]%",
+      
       tankDrive: "Kettenantrieb L:[LEFT] R:[RIGHT] für [ROTATIONS] Umdrehungen",
       motorPosition: "Motor [PORT] Position",
       motorSpeed: "Motor [PORT] Geschwindigkeit",
       motorIsRunning: "Motor [PORT] läuft gerade?",
       motorIsStalled: "Motor [PORT] ist blockiert?",
       motorReset: "Motor [PORT] Position zurücksetzen",
+      dcMotorRun: "DC-Motor [PORT] Leistung [SPEED]%",
+      dcMotorStop: "DC-Motor [PORT] stopp",
 
       // Servo
       servo: "Servo",
       servoRunTo: "Servo [PORT] zu [POS]° Geschw. [SPEED]%",
+      servoStop: "Servo [PORT] stopp",
 
       // Steering
       steering: "Lenkung",
@@ -874,11 +890,11 @@
           {
             opcode: "setConnectionMode",
             blockType: Scratch.BlockType.COMMAND,
-            text: "set connection [MODE] IP [IP] port [PORT]",
+            text: t("setConnection"), // Uses the translated string
             arguments: {
               MODE: { type: Scratch.ArgumentType.STRING, menu: "connectionModes", defaultValue: "https" },
               IP: { type: Scratch.ArgumentType.STRING, defaultValue: "192.168.178.50" },
-              PORT: { type: Scratch.ArgumentType.NUMBER, defaultValue: 8443 },
+              PORT: { type: Scratch.ArgumentType.NUMBER, defaultValue: 443 },
             },
           },
           {
@@ -1058,6 +1074,38 @@
             },
           },
           {
+            opcode: "ev3MotorRunDegrees",
+            blockType: Scratch.BlockType.COMMAND,
+            text: t("motorRunDegrees"),
+            arguments: {
+              PORT: { type: Scratch.ArgumentType.STRING, menu: "motorPorts" },
+              DEGREES: { type: Scratch.ArgumentType.NUMBER, defaultValue: 90 },
+              SPEED: { type: Scratch.ArgumentType.NUMBER, defaultValue: 50 },
+            },
+          },
+          {
+            opcode: "ev3MotorRunTimed",
+            blockType: Scratch.BlockType.COMMAND,
+            text: t("motorRunTimed"),
+            arguments: {
+              PORT: { type: Scratch.ArgumentType.STRING, menu: "motorPorts" },
+              SECONDS: { type: Scratch.ArgumentType.NUMBER, defaultValue: 1 },
+              SPEED: { type: Scratch.ArgumentType.NUMBER, defaultValue: 50 },
+            },
+          },
+          {
+            opcode: "ev3MotorRunToAbsPos",
+            blockType: Scratch.BlockType.COMMAND,
+            text: t("motorRunToAbs"),
+            arguments: {
+              PORT: { type: Scratch.ArgumentType.STRING, menu: "motorPorts" },
+              POS: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 },
+              SPEED: { type: Scratch.ArgumentType.NUMBER, defaultValue: 50 },
+            },
+          },
+
+
+          {
             opcode: "ev3TankDrive",
             blockType: Scratch.BlockType.COMMAND,
             text: t("tankDrive"),
@@ -1109,6 +1157,14 @@
               SPEED: { type: Scratch.ArgumentType.NUMBER, defaultValue: 50 },
             },
           },
+          {
+            opcode: "servoStop",
+            blockType: Scratch.BlockType.COMMAND,
+            text: t("servoStop"),
+            arguments: {
+              PORT: { type: Scratch.ArgumentType.STRING, menu: "motorPorts" },
+            },
+          },
 
           // High-Level Steering
           {
@@ -1119,6 +1175,25 @@
               STEERING: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 },
               SPEED: { type: Scratch.ArgumentType.NUMBER, defaultValue: 50 },
               ROTATIONS: { type: Scratch.ArgumentType.NUMBER, defaultValue: 1 },
+            },
+          },
+
+          { blockType: Scratch.BlockType.LABEL, text: "DC Motors (RCX/Power Functions)" },
+          {
+            opcode: "ev3DcMotorRun",
+            blockType: Scratch.BlockType.COMMAND,
+            text: t("dcMotorRun"),
+            arguments: {
+              PORT: { type: Scratch.ArgumentType.STRING, menu: "motorPorts" },
+              SPEED: { type: Scratch.ArgumentType.NUMBER, defaultValue: 50 },
+            },
+          },
+          {
+            opcode: "ev3DcMotorStop",
+            blockType: Scratch.BlockType.COMMAND,
+            text: t("dcMotorStop"),
+            arguments: {
+              PORT: { type: Scratch.ArgumentType.STRING, menu: "motorPorts" },
             },
           },
 
@@ -3096,6 +3171,45 @@
       this.sendCommand("motor_stop", { port: args.PORT, brake: args.BRAKE });
     }
 
+    ev3MotorRunDegrees(args) {
+      // We reuse 'motor_run_for' but calculate rotations (degrees / 360)
+      // Or we can add a specific handler if we want to be purists, 
+      // but converting to rotations is safe and compatible with current bridge.
+      this.sendCommand("motor_run_for", {
+        port: args.PORT,
+        speed: this.clampSpeed(args.SPEED),
+        rotations: args.DEGREES / 360,
+      });
+    }
+
+    ev3MotorRunTimed(args) {
+      this.sendCommand("motor_run_timed", {
+        port: args.PORT,
+        speed: this.clampSpeed(args.SPEED),
+        seconds: args.SECONDS,
+      });
+    }
+
+    ev3MotorRunToAbsPos(args) {
+      this.sendCommand("motor_run_to_position", {
+        port: args.PORT,
+        speed: Math.abs(this.clampSpeed(args.SPEED)), // Speed must be positive for abs pos
+        position: args.POS,
+      });
+    }
+
+    servoRunToPosition(args) {
+      this.sendCommand("servo_run_to_position", {
+        port: args.PORT,
+        position: args.POS,
+        speed: this.clampSpeed(args.SPEED),
+      });
+    }
+
+    servoStop(args) {
+        this.sendCommand("servo_stop", { port: args.PORT });
+    }
+
     async ev3MotorIsRunning(args) {
         const data = await this.getSensorData(`/motor/state/${args.PORT}`);
         // check if 'running' is in state flags list
@@ -3105,6 +3219,17 @@
     async ev3MotorIsStalled(args) {
         const data = await this.getSensorData(`/motor/state/${args.PORT}`);
         return data.value && data.value.includes("stalled");
+    }
+
+    ev3DcMotorRun(args) {
+      this.sendCommand("dc_motor_run", {
+        port: args.PORT,
+        speed: this.clampSpeed(args.SPEED),
+      });
+    }
+
+    ev3DcMotorStop(args) {
+      this.sendCommand("dc_motor_stop", { port: args.PORT });
     }
 
     ev3TankDrive(args) {
@@ -4033,7 +4158,7 @@
       );
       this.addLine("try:");
       this.indentLevel++;
-      this.addLine("motors[port] = LargeMotor(port_map[port])");
+      this.addLine("motors[port] = Motor(port_map[port])");
       this.addLine('print(f"Initialized motor on port {port}")');
       this.indentLevel--;
       this.addLine("except Exception as e:");
@@ -4344,7 +4469,64 @@
             ")",
         );
         this.indentLevel--;
-      } else if (opcode === "scratchtoev3_ev3MotorStop") {
+      } else if (opcode === "scratchtoev3_ev3MotorRunDegrees") {
+        const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
+        const degrees = this.getInputValue(block, "DEGREES", blocks);
+        const speed = this.getInputValue(block, "SPEED", blocks);
+        this.addLine(`motor = get_motor("${port}")`);
+        this.addLine("if motor:");
+        this.indentLevel++;
+        // Use on_for_degrees directly
+        this.addLine(`motor.on_for_degrees(SpeedPercent(${speed}), ${degrees}, block=False)`);
+        this.indentLevel--;
+      } 
+      
+      else if (opcode === "scratchtoev3_ev3MotorRunTimed") {
+        const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
+        const seconds = this.getInputValue(block, "SECONDS", blocks);
+        const speed = this.getInputValue(block, "SPEED", blocks);
+        this.addLine(`motor = get_motor("${port}")`);
+        this.addLine("if motor:");
+        this.indentLevel++;
+        this.addLine(`motor.on_for_seconds(SpeedPercent(${speed}), ${seconds}, block=False)`);
+        this.indentLevel--;
+      } 
+      
+      else if (opcode === "scratchtoev3_ev3MotorRunToAbsPos") {
+        const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
+        const pos = this.getInputValue(block, "POS", blocks);
+        const speed = this.getInputValue(block, "SPEED", blocks);
+        this.addLine(`motor = get_motor("${port}")`);
+        this.addLine("if motor:");
+        this.indentLevel++;
+        // on_to_position speed must be positive in Python
+        this.addLine(`motor.on_to_position(SpeedPercent(abs(${speed})), ${pos}, block=False)`);
+        this.indentLevel--;
+      } else if (opcode === "scratchtoev3_servoRunToPosition") {
+        const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
+        const pos = this.getInputValue(block, "POS", blocks);
+        const speed = this.getInputValue(block, "SPEED", blocks);
+        
+        // Ensure imports and helper usage matches the bridge logic
+        this.addLine(`from ev3dev2.motor import ServoMotor, SpeedPercent`);
+        // We assume get_servo_motor is defined in the header of the generated script
+        // or we instantiate directly if we want to be self-contained
+        this.addLine(`s = ServoMotor(OUTPUT_${port})`); 
+        this.addLine(`if s:`);
+        this.indentLevel++;
+        this.addLine(`s.run_to_abs_pos(position_sp=${pos}, speed_sp=SpeedPercent(${speed}))`);
+        this.indentLevel--;
+      }
+      else if (opcode === "scratchtoev3_servoStop") {
+        const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
+        this.addLine(`from ev3dev2.motor import ServoMotor`);
+        this.addLine(`s = ServoMotor(OUTPUT_${port})`);
+        this.addLine(`if s: s.stop()`);
+      }
+      
+      
+      
+      else if (opcode === "scratchtoev3_ev3MotorStop") {
         const port = this.getInputValue(block, "PORT", blocks).replace(
           /"/g,
           "",
@@ -4381,6 +4563,21 @@
             ", block=True)",
         );
         this.indentLevel--;
+      } else if (opcode === "scratchtoev3_ev3DcMotorRun") {
+        const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
+        const speed = this.getInputValue(block, "SPEED", blocks);
+        this.addLine(`from ev3dev2.motor import DcMotor`); // Ensure import
+        this.addLine(`m = DcMotor(OUTPUT_${port})`);
+        this.addLine(`if m:`);
+        this.indentLevel++;
+        this.addLine(`m.duty_cycle_sp = ${speed}`);
+        this.addLine(`m.run_direct()`);
+        this.indentLevel--;
+      } 
+      else if (opcode === "scratchtoev3_ev3DcMotorStop") {
+        const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
+        this.addLine(`m = DcMotor(OUTPUT_${port})`);
+        this.addLine(`if m: m.stop()`);
       }
 
       // EV3 Display blocks

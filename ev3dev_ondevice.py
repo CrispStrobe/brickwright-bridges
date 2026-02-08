@@ -25,6 +25,7 @@ from pathlib import Path
 
 # EV3 imports
 from ev3dev2.motor import (
+    Motor,
     LargeMotor,
     MediumMotor,
     OUTPUT_A,
@@ -715,38 +716,47 @@ script_manager = ScriptManager(SCRIPTS_DIR)
 
 
 def get_motor(port_char):
-    """Lazy load motors with disconnect protection"""
-    vlog("get_motor called", {"port": port_char})
-
+    """
+    Lazy load generic Tacho Motor (EV3 Large, Medium, or NXT).
+    Using 'Motor' class allows NXT motors to work automatically.
+    """
     if port_char in motors:
         motor = motors[port_char]
         if motor:
             try:
-                _ = motor.is_running
-                return motor
+                # Check connection status
+                if motor.connected: 
+                    return motor
             except:
-                log("Motor {0} disconnected".format(port_char))
-                motors[port_char] = None
+                pass
+            log(f"Motor {port_char} disconnected")
+            motors[port_char] = None
 
     try:
         mapping = {"A": OUTPUT_A, "B": OUTPUT_B, "C": OUTPUT_C, "D": OUTPUT_D}
-
-        try:
-            motors[port_char] = LargeMotor(mapping[port_char])
-            log("Large motor initialized on port {0}".format(port_char))
-        except:
-            try:
-                motors[port_char] = MediumMotor(mapping[port_char])
-                log("Medium motor initialized on port {0}".format(port_char))
-            except:
-                motors[port_char] = None
-                return None
+        # Initialize as generic Motor to support NXT, Large, and Medium
+        motors[port_char] = Motor(mapping[port_char])
+        log(f"Tacho Motor initialized on port {port_char}")
     except Exception as e:
         log("Motor init failed", str(e))
         motors[port_char] = None
 
     return motors[port_char]
 
+def get_dc_motor(port_char):
+    """Lazy load DC Motor (RCX / Power Functions)"""
+    key = "DC_" + port_char
+    if key in motors and motors[key]:
+        return motors[key]
+
+    try:
+        mapping = {"A": OUTPUT_A, "B": OUTPUT_B, "C": OUTPUT_C, "D": OUTPUT_D}
+        motors[key] = DcMotor(mapping[port_char])
+        log(f"DC Motor initialized on port {port_char}")
+    except Exception as e:
+        log("DC Motor init failed", str(e))
+        motors[key] = None
+    return motors[key]
 
 def get_medium_motor(port_char):
     """Lazy load medium motors"""
@@ -1260,16 +1270,16 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                 else:
                     self._send_json({"status": "error", "msg": "Servo not connected"})
 
-            # === DC MOTOR ===
+            # === DC MOTORS (No Tacho/Rotation logic) ===
             elif command == "dc_motor_run":
                 m = get_dc_motor(data["port"])
                 if m:
-                    m.on(SpeedPercent(data["speed"]))
+                    # DC Motors use duty_cycle_sp (-100 to 100)
+                    m.duty_cycle_sp = data["speed"]
+                    m.run_direct()
                     self._send_json({"status": "ok"})
                 else:
-                    self._send_json(
-                        {"status": "error", "msg": "DC motor not connected"}
-                    )
+                    self._send_json({"status": "error", "msg": "DC Motor not connected"})
 
             elif command == "dc_motor_stop":
                 m = get_dc_motor(data["port"])
@@ -1277,66 +1287,45 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                     m.stop()
                     self._send_json({"status": "ok"})
                 else:
-                    self._send_json(
-                        {"status": "error", "msg": "DC motor not connected"}
-                    )
-
-            # === MOVE TANK (High-level tank driving) ===
-            elif command == "move_tank":
-                # MoveTank makes tank driving easier
-                try:
-                    tank = MoveTank(
-                        data.get("left_port", "B"), data.get("right_port", "C")
-                    )
-
-                    if "rotations" in data:
-                        tank.on_for_rotations(
-                            SpeedPercent(data["left_speed"]),
-                            SpeedPercent(data["right_speed"]),
-                            data["rotations"],
-                        )
-                    elif "seconds" in data:
-                        tank.on_for_seconds(
-                            SpeedPercent(data["left_speed"]),
-                            SpeedPercent(data["right_speed"]),
-                            data["seconds"],
-                        )
-                    else:
-                        tank.on(
-                            SpeedPercent(data["left_speed"]),
-                            SpeedPercent(data["right_speed"]),
-                        )
-
-                    self._send_json({"status": "ok"})
-                except Exception as e:
-                    log("MoveTank failed", str(e))
-                    self._send_json({"status": "error", "msg": str(e)})
+                    self._send_json({"status": "error", "msg": "DC Motor not connected"})
 
             # === MOVE STEERING (High-level steering) ===
+            
             elif command == "move_steering":
-                # MoveSteering for car-like steering
                 try:
+                    # FIX: We MUST pass motor_class=Motor. 
+                    # If we don't, ev3dev2 defaults to LargeMotor and crashes with Medium/NXT motors.
                     steering = MoveSteering(
-                        data.get("left_port", "B"), data.get("right_port", "C")
+                        data.get("left_port", "B"), 
+                        data.get("right_port", "C"),
+                        motor_class=Motor
                     )
 
-                    # Steering: -100 (full left) to 100 (full right)
-                    # Speed: motor speed
+                    # Steering: -100 (turn left on spot) to 100 (turn right on spot)
+                    # Speed: -100 to 100
+                    
+                    steer_val = data["steering"]
+                    speed_val = SpeedPercent(data["speed"])
+                    brake_mode = data.get("brake", True)
 
                     if "rotations" in data:
                         steering.on_for_rotations(
-                            data["steering"],
-                            SpeedPercent(data["speed"]),
+                            steer_val,
+                            speed_val,
                             data["rotations"],
+                            brake=brake_mode,
+                            block=False  # Async: Don't block the server
                         )
                     elif "seconds" in data:
                         steering.on_for_seconds(
-                            data["steering"],
-                            SpeedPercent(data["speed"]),
+                            steer_val,
+                            speed_val,
                             data["seconds"],
+                            brake=brake_mode,
+                            block=False  # Async
                         )
                     else:
-                        steering.on(data["steering"], SpeedPercent(data["speed"]))
+                        steering.on(steer_val, speed_val)
 
                     self._send_json({"status": "ok"})
                 except Exception as e:
