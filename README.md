@@ -1,417 +1,214 @@
+# turbowarp-lego
 
-# TurboWarp Extensions (mostly for LEGO Hubs)
+A grab-bag of TurboWarp/Scratch extensions and Python bridges for talking to
+older LEGO bricks (NXT, EV3, Boost, Spike Prime, WeDo 2.0, Powered UP) over
+Bluetooth Classic, BLE, ScratchLink, Web Serial, or a local Python WebSocket
+bridge — whichever the platform/firmware actually allows.
 
-For some of these, if you use them on Desktop (Windows, MacOS), you need the LEGO ScratchLink software as a bridge. Alternatively, some of these extensions support a custom (Websocket) bridge.
+Most extensions need **Sandbox Mode disabled** in TurboWarp.
 
-For most of these, you must disable Sandbox Mode in TurboWarp.
+> **Where development happens:** the actively-curated, gallery-ready copies of
+> these extensions live in
+> [`CrispStrobe/extensions/extensions/CrispStrobe/`](https://github.com/CrispStrobe/extensions/tree/main/extensions/CrispStrobe).
+> This repo is the working sandbox + companion Python bridges + protocol notes.
 
-For iOS, you might try them in Scrub App which provides a ScratchLink-like functionality (https://github.com/bricklife/Scrub) (this is untested yet).
+## Related repos
 
-## 📁 Quick File Reference
+| Repo | What it does |
+|------|-------------|
+| [`CrispStrobe/extensions`](https://github.com/CrispStrobe/extensions) | Curated extension gallery (this is where the maintained .js files live) |
+| [`CrispStrobe/scratch-gui`](https://github.com/CrispStrobe/scratch-gui) | TurboWarp editor fork that loads the gallery above |
+| [`CrispStrobe/turbowarp-desktop`](https://github.com/CrispStrobe/turbowarp-desktop) | Electron build of the editor |
+| [`CrispStrobe/turbowarp-android`](https://github.com/CrispStrobe/turbowarp-android) | Android wrapper with native Bluetooth bridges |
+| [`CrispStrobe/turbowarp-ios`](https://github.com/CrispStrobe/turbowarp-ios) | iOS wrapper with native Bluetooth bridges |
+| [`CrispStrobe/legacy-lego-compiler`](https://github.com/CrispStrobe/legacy-lego-compiler) | Hosted REST API that compiles NXC → `.rxe` and lmsasm → EV3 bytecode (used by the transpile extensions) |
+| [`CrispStrobe/scratch-lego-bluetooth-extensions`](https://github.com/CrispStrobe/scratch-lego-bluetooth-extensions) | Older Xcratch-style `.mjs` build of the LEGO extensions |
 
-| Category | Files |
-|----------|-------|
-| **LEGO Spike Prime** | [`legospikeprime_btc_scratchlink.js`](./legospikeprime_btc_scratchlink.js), [`legospikeprime_ble.js`](./legospikeprime_ble.js), [`legospike_ble.js`](./legospike_ble.js), [`legospike_bridge.js`](./legospike_bridge.js) |
-| **LEGO Boost** | [`legoboost_scratchlink.js`](./legoboost_scratchlink.js), [`legoboost_ble.js`](./legoboost_ble.js), [`legoboost_turbowarp.js`](./legoboost_turbowarp.js) |
-| **LEGO EV3** | [`ev3_btc.js`](./ev3_btc.js), [`ev3_lms_transpile.js`](./ev3_lms_transpile.js), [`ev3_transpile.js`](./ev3_transpile.js) |
-| **LEGO NXT** | [`legonxt_transpile_universal.js`](./legonxt_transpile_universal.js), [`legonxt_transpile_scratchlink.js`](./legonxt_transpile_scratchlink.js), [`legonxt_transpile_direct.js`](./legonxt_transpile_direct.js), [`legonxt_transpile_bridge.js`](./legonxt_transpile_bridge.js), [`legonxt-direct.js`](./legonxt-direct.js), [`legonxt_turbowarp.js`](./legonxt_turbowarp.js) |
-| **Math/Utilities** | [`csp.js`](./csp.js), [`planetemaths.js`](./planetemaths.js), [`arrays.js`](./arrays.js), [`gamepad.js`](./gamepad.js) |
-| **Python Bridges** | [`nxt_bridge.py`](./nxt_bridge.py), [`ev3_ondevice_bridge.py`](./ev3_ondevice_bridge.py), [`lego_bridge.py`](./lego_bridge.py) |
+## What's in here
 
----
+| Category | File | Notes |
+|----------|------|-------|
+| **EV3 (original firmware)** | [`ev3_direct.js`](./ev3_direct.js) | Direct command streaming over Bluetooth/USB |
+| | [`ev3_lms_transpile.js`](./ev3_lms_transpile.js) | Streaming + transpile to lmsasm → EV3 bytecode (uses [legacy-lego-compiler](https://github.com/CrispStrobe/legacy-lego-compiler)) |
+| | [`ev3_universal.js`](./ev3_universal.js) | All EV3 connection backends in one extension (ScratchLink / Web Serial / WebSocket / direct HTTP) |
+| **EV3 (ev3dev firmware)** | [`ev3dev_py_transpile.js`](./ev3dev_py_transpile.js) | Streaming **and** transpile to Python; runs on the brick via the on-device bridge |
+| | [`ev3dev_ondevice.py`](./ev3dev_ondevice.py) | HTTP/HTTPS JSON bridge that runs on the EV3 (the canonical version is `ev3_bridge.py` in the `extensions` repo) |
+| | [`ev3_local_bridge.py`](./ev3_local_bridge.py) | Local-host HTTP bridge variant — see [README_ev3_local_bridge.md](./README_ev3_local_bridge.md) |
+| **NXT** | [`legonxt_transpile_universal.js`](./legonxt_transpile_universal.js) | Multi-backend (ScratchLink / BTC / bridge); transpiles Scratch → NXC → `.rxe` via [legacy-lego-compiler](https://github.com/CrispStrobe/legacy-lego-compiler) |
+| | [`nxt_bridge.py`](./nxt_bridge.py) | WebSocket bridge for direct NXT control over RFCOMM (see [NXT setup](#nxt-setup-and-troubleshooting) below) |
+| | [`nxt-pybluez-bridge.py`](./nxt-pybluez-bridge.py) | Experimental PyBluez-based alternative bridge |
+| | [`nxt-diag.py`](./nxt-diag.py), [`test_bt.py`](./test_bt.py), [`reset_nxt.sh`](./reset_nxt.sh) | Diagnostic / pairing helpers |
+| **Spike Prime / Robot Inventor** | [`legospikeprime_btc_scratchlink.js`](./legospikeprime_btc_scratchlink.js) | BTC via ScratchLink (firmware 2.x) |
+| | [`legospikeprime_ble.js`](./legospikeprime_ble.js), [`legospike_ble.js`](./legospike_ble.js) | BLE (firmware 3.x) — work in progress |
+| | [`legospike_bridge.js`](./legospike_bridge.js) | WebSocket bridge variant |
+| | [`legospike_turbowarp_transpile.js`](./legospike_turbowarp_transpile.js) | Transpile project to MicroPython for the hub |
+| **Powered UP / Boost / Technic Hub / WeDo 2.0** | [`legoboost_universal.js`](./legoboost_universal.js) | Boost (BLE) |
+| | [`lego_poweredup.js`](./lego_poweredup.js) | Powered UP / Technic Hub (BLE) |
+| | [`lego_wedo2_universal.js`](./lego_wedo2_universal.js) | WeDo 2.0 (BLE) |
+| **Generic Python bridges** | [`lego_bridge.py`](./lego_bridge.py), [`lego_bridge_unified.py`](./lego_bridge_unified.py), [`universal_bridge.py`](./universal_bridge.py), [`universal_lego_bridge.py`](./universal_lego_bridge.py) | Older / experimental WebSocket bridges. See [README_bridges.md](./README_bridges.md) |
+| **Math/utility** | [`csp.js`](./csp.js) | Constraint-Satisfaction-Problem solver |
+| | [`planetemaths.js`](./planetemaths.js) | Math operations (rewritten from CodePM) |
+| | [`arrays.js`](./arrays.js) | Array / vector / tensor blocks |
+| | [`gamepad.js`](./gamepad.js) | Gamepad / controller input (untested) |
 
-## LEGO Spike Prime = Robot Inventor Hub
+## Connection options at a glance
 
-### Bluetooth Classic (BTC)
+| Hub | BTC (ScratchLink) | BLE (Web BT / native) | Custom WebSocket bridge | Notes |
+|------|:-----------------:|:---------------------:|:------------------------:|------|
+| EV3 (orig FW) | yes | — | yes | also direct HTTP via `ev3_universal.js` |
+| EV3 (ev3dev) | — | — | yes (HTTP/HTTPS JSON) | `ev3dev_ondevice.py` runs on the brick |
+| NXT | yes | — | yes (`nxt_bridge.py`) | RFCOMM, drops on macOS — see below |
+| Spike Prime / Robot Inventor (FW 2.x) | yes | — | yes | BTC |
+| Spike Prime (FW 3.x) | — | yes | — | BLE |
+| Boost | — | yes | — | BLE |
+| Powered UP / Technic Hub | — | yes | — | BLE |
+| WeDo 2.0 | — | yes | — | BLE |
 
-**Extension:** [`legospikeprime_btc_scratchlink.js`](./legospikeprime_btc_scratchlink.js)
+**Platform caveats:**
 
-Note for this you need the older 2.x firmware which works with Bluetooth Classic (BTC).
-
-You can switch firmwares by running upgrade from Spike Prime app, or [downgrade](https://spikelegacy.legoeducation.com/hubdowngrade/#step-1) or use dfu-util/pybricksdev (backup/restore).
-
-### Bluetooth Low Energy (BLE)
-
-This is work in progress and I could not yet test it:
-- **Extension:** [`legospike_ble.js`](./legospike_ble.js)
-- **Alternative:** [`legospikeprime_ble.js`](./legospikeprime_ble.js)
-
-For this you need the newer firmware (you can upgrade from Spike Prime app).
-
----
-
-## LEGO Boost (BLE)
-
-**Extension:** [`legoboost_scratchlink.js`](./legoboost_scratchlink.js) (requires ScratchLink installed)
-
-**Alternatives:**
-- [`legoboost_ble.js`](./legoboost_ble.js) - Direct BLE connection
-- [`legoboost_turbowarp.js`](./legoboost_turbowarp.js) - Bridge-based connection
-
----
-
-## LEGO EV3
-
-### Original Firmware
-
-**[`ev3_lms_transpile.js`](./ev3_lms_transpile.js)** - Allows streaming mode (direct command execution) and transpiling to lmsasm, which can then be compiled to bytecode that should run on the EV3 Brick. Compilation needs internet connectivity as it uses a REST API which wraps [NBC](https://bricxcc.sourceforge.net/nbc/) and [lmsasm](https://github.com/ev3dev/lmsasm) at https://lego-compiler.vercel.app/ ([source](https://github.com/CrispStrobe/legacy-lego-compiler)). **Use with caution!**
-
-**[`ev3_btc.js`](./ev3_btc.js)** - Connects to the original firmware with streaming mode only.
-
-### EV3DEV Firmware
-
-With ev3dev, you have Linux on the device and can do lots of cool things.
-
-**Python Bridge:** [`ev3_ondevice_bridge.py`](./ev3_ondevice_bridge.py) - Supports both streaming mode (direct command execution) and transpiling code blocks to Python scripts with on-device execution.
-
-**Extension:** [`ev3_transpile.js`](./ev3_transpile.js) - Required for transpilation features.
-
-⚠️ This is all work in progress.
-
----
-
-## LEGO NXT
-
-### Transpilation Extensions (Scratch → NXC → RXE)
-
-**[`legonxt_transpile_universal.js`](./legonxt_transpile_universal.js)** ⭐ - Should include all connection option, ScratchLink, BTC and Bridge. Gives you the option to transpile code blocks to NXC and then compile them to RXE files which the NXT Brick can run directly. Must be thoroughly tested though.
-
-**[`legonxt_transpile_scratchlink.js`](./legonxt_transpile_scratchlink.js)** ⭐ **RECOMMENDED** - Works with ScratchLink and gives you the option to transpile code blocks to NXC and then compile them to RXE files which the NXT Brick can run directly.
-
-**Alternatives:**
-- [`legonxt_transpile_direct.js`](./legonxt_transpile_direct.js) - Direct connection (incomplete)
-- [`legonxt_transpile_bridge.js`](./legonxt_transpile_bridge.js) - Bridge-based (incomplete)
-
-Compilation needs internet connectivity, using REST API at https://lego-compiler.vercel.app/ ([source](https://github.com/CrispStrobe/legacy-lego-compiler)).
-
-### Direct Control Extensions
-
-**[`legonxt-direct.js`](./legonxt-direct.js)** - Direct Bluetooth control (pair NXT via device Bluetooth settings first)
-
-**[`legonxt_turbowarp.js`](./legonxt_turbowarp.js)** - Uses WebSocket bridge
-
-**Python Bridge:** [`nxt_bridge.py`](./nxt_bridge.py) - Main WebSocket bridge (keep running)
-
-**Legacy/Debug Files:**
-- [`lego_bridge.py`](./lego_bridge.py) - Older bridge attempt
-- [`nxt-diag.py`](./nxt-diag.py) - Connection diagnostics
-- [`nxt-pybluez-bridge.py`](./nxt-pybluez-bridge.py) - Experimental alternative bridge
-- [`reset_nxt.sh`](./reset_nxt.sh) - Reset pairing on macOS
-- [`test_bt.py`](./test_bt.py) - Bluetooth discovery test
+- **macOS / Windows:** Web Bluetooth and Web Serial work in Chrome/Edge. ScratchLink-mode extensions need [LEGO ScratchLink](https://scratch.mit.edu/scratchlink/) installed.
+- **iOS:** Web BT / Web Serial don't exist on iOS. The only path is a Scratch-Link-emulating native shell — try [Scrub](https://github.com/bricklife/Scrub), or use [`turbowarp-ios`](https://github.com/CrispStrobe/turbowarp-ios) which has native BLE/BTC bridges built in.
+- **Sandbox mode:** must be disabled for any of the hardware extensions.
 
 ---
 
-## Non-LEGO Extensions
+## EV3 details
 
-### Math
+### Original LEGO firmware
 
-- **[`csp.js`](./csp.js)** - Simple Constraint-Satisfaction-Problem solver
-- **[`planetemaths.js`](./planetemaths.js)** - Additional math operations (rewritten from CodePM extension)
-- **[`arrays.js`](./arrays.js)** - Array/vector/tensor handling
+`ev3_lms_transpile.js` lets you either **stream** direct commands (works while
+the editor stays connected) or **transpile** the project to lmsasm and compile
+it to EV3 bytecode you can copy onto the brick. Compilation goes through the
+hosted REST API at <https://lego-compiler.vercel.app/> — source in
+[CrispStrobe/legacy-lego-compiler](https://github.com/CrispStrobe/legacy-lego-compiler).
+Internet connectivity is required for compile. **Use with caution.**
 
-### Gamepad
+`ev3_direct.js` is streaming-only.
 
-**[`gamepad.js`](./gamepad.js)** - Gamepad support (untested)
+`ev3_universal.js` bundles ScratchLink, Web Serial, WebSocket, and direct-HTTP
+backends in one extension and lets you pick at runtime.
 
----
+### ev3dev firmware
 
-# LEGO NXT Bluetooth Control for TurboWarp
+[ev3dev](https://www.ev3dev.org/) replaces the LEGO firmware with a Debian
+Linux. With it on the brick, `ev3dev_py_transpile.js` lets you either:
 
-Control LEGO Mindstorms NXT robots directly from TurboWarp using Bluetooth. This project provides both a WebSocket bridge for remote access and a direct Web Serial API extension for local connections.
+- **stream:** Scratch blocks fire as JSON commands at the on-device bridge, e.g.
+  `{"cmd":"beep","freq":1000,"dur":500}`; or
+- **transpile:** the whole project compiles to a single Python script which the
+  bridge runs on the brick.
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-
-## 🎯 Features
-
-### Motor Control
-- Continuous motor power control (-100% to 100%)
-- Precise angle-based movement (degrees/rotations)
-- Position tracking and reset
-- Brake and coast modes
-
-### Sensor Support
-- **Touch Sensor**: Boolean press detection
-- **Light Sensor**: Brightness readings (0-1023) with LED control
-- **Sound Sensor**: Loudness measurement in dB/dBA mode
-- **Ultrasonic Sensor**: Distance measurement (0-255 cm) via I2C
-
-### Display Graphics
-- Clear screen and update display
-- Draw text with 5×7 bitmap font (A-Z, 0-9, symbols)
-- Draw pixels, lines, rectangles (filled/outline)
-- Built-in patterns (checkerboard, stripes, grid, dots, border)
-- Screen capture (returns base64 BMP image)
-
-### Sound
-- Play tones (200-14000 Hz)
-- Musical notes (C4-B5)
-
-### Status
-- Battery voltage monitoring (mV)
-- Connection status
-
-## 📋 Requirements
-
-### Hardware
-- LEGO Mindstorms NXT brick (NXT 1.0 or 2.0)
-- Bluetooth connection (built-in NXT Bluetooth)
-- **macOS, Windows, or Linux** computer
-
-### Software
-- **Python 3.8+** (for WebSocket bridge)
-- **Chrome/Edge 89+** (for Web Serial API)
-- **Python packages**: `websockets`, `pyserial`
+The bridge script lives in this repo as
+[`ev3dev_ondevice.py`](./ev3dev_ondevice.py). The actively-maintained copy
+(with on-screen IP/port readout, IP refresh, etc.) is in
+[CrispStrobe/extensions](https://github.com/CrispStrobe/extensions/blob/main/extensions/CrispStrobe/ev3_bridge.py).
 
 ```bash
-pip install websockets pyserial
+scp ev3dev_ondevice.py robot@ev3dev.local:/home/robot/
+ssh robot@ev3dev.local 'python3 ~/ev3dev_ondevice.py'
+# then talk to it from your laptop:
+curl -X POST http://<brick-ip>:8080/ \
+     -H 'Content-Type: application/json' \
+     -d '{"cmd":"beep","freq":1000,"dur":500}'
 ```
 
-## 🚀 Quick Start
+See [README_ev3dev_bridge.md](./README_ev3dev_bridge.md) for the full command
+reference.
 
-### Method 1: WebSocket Bridge (Recommended)
+---
 
-1. **Pair NXT via Bluetooth** (see [macOS Setup](#macos-bluetooth-setup) below)
+## NXT setup and troubleshooting
 
-2. **Run the bridge**:
-```bash
-python nxt_bridge.py
-```
+The NXT brick speaks an old SPP-over-Bluetooth profile that browsers can't
+reach directly. There are two viable paths:
 
-3. **Load extension in TurboWarp**:
-   - Load [`legonxt_turbowarp.js`](./legonxt_turbowarp.js) as a custom extension
-   - Use the "connect to [URL]" block with `localhost:8080`
+1. **Pair via OS, then run `nxt_bridge.py`** (a local WebSocket bridge) →
+   editor connects to `ws://localhost:8080`. **Recommended.**
+2. **Web Serial on TurboWarp Desktop** with `legonxt_transpile_universal.js` →
+   connect to `/dev/cu.NXT` (macOS) or the COM port (Windows). Experimental.
 
-### Method 2: Direct Web Serial (Experimental)
+### Requirements
 
-1. **Pair NXT via Bluetooth**
-2. **Load extension** [`legonxt-direct.js`](./legonxt-direct.js) in TurboWarp Desktop
-3. **Connect** and select `/dev/cu.NXT` (macOS) or appropriate COM port
+- LEGO MINDSTORMS NXT (1.0 or 2.0)
+- macOS / Windows / Linux with Bluetooth
+- Python 3.8+ for the bridge: `pip install websockets pyserial`
+- Chrome/Edge 89+ for the Web Serial path
 
-## 🔧 Setup
+### macOS pairing
 
-### macOS Bluetooth Setup
+The macOS RFCOMM channel drops frequently. Workflow that works reliably:
 
-**Critical Steps** (Bluetooth connection drops frequently on macOS):
-
-1. **Forget existing pairing** (if any):
 ```bash
 blueutil --disconnect 00-16-53-XX-XX-XX
-blueutil --unpair 00-16-53-XX-XX-XX
+blueutil --unpair    00-16-53-XX-XX-XX
+# turn the NXT off and back on
+blueutil --pair      00-16-53-XX-XX-XX     # PIN: 1234
+python3 nxt-diag.py                         # should beep + print battery
 ```
 
-2. **Turn NXT off and back on**
+If commands stop working after inactivity, run [`./reset_nxt.sh`](./reset_nxt.sh)
+to re-pair. The port to use in the direct extension is `/dev/cu.NXT` — **not**
+`/dev/cu.Bluetooth-Incoming-Port`.
 
-3. **Re-pair with PIN 1234**:
-```bash
-blueutil --pair 00-16-53-XX-XX-XX
-# Enter PIN: 1234
-```
+### Windows pairing
 
-4. **Verify connection**:
-```bash
-python nxt-diag.py
-```
+Settings → Bluetooth & devices → Devices → set discovery to **Advanced**, then
+pair with PIN `1234`. Or in a terminal:
 
-You should hear a beep and see battery data!
-
-**⚠️ Important**: The Bluetooth connection may drop after inactivity. If commands stop working, **repeat the pairing process** using the [`reset_nxt.sh`](./reset_nxt.sh) script:
-
-```bash
-chmod +x reset_nxt.sh
-./reset_nxt.sh
-```
-
-### Windows Setup
-
-1. Pair NXT via Bluetooth settings
-   You probably must first enable "Advanced" Discovery in Windows 11:
-   - Open Settings (Win + I)
-   - Go to Bluetooth & devices > Devices
-   - Scroll down to Device settings
-   - Change Bluetooth devices discovery from "Default" to "Advanced"
-   - Enter the NXT Bluetooth PIN: default = 1234
-
-   Note you might also do this in Windows Terminal:
 ```cmd
 btpair -u
 ```
 
-2. Note the COM port
-3. Run the bridge
+Note the COM port and use it in the extension.
 
-### Linux Setup
+### Linux pairing
 
-You can inspect the COM port at `/dev/rfcomm0`
+The NXT shows up as `/dev/rfcomm0` after pairing.
 
-## 📁 File Descriptions
+### NXT troubleshooting
 
-### JavaScript Extensions
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| No beep, no battery from `nxt-diag.py` | RFCOMM channel never came up | unpair + repair (steps above) |
+| Commands sent, nothing happens | RFCOMM channel dropped after idle | run `./reset_nxt.sh`; wait ~10 s after pairing |
+| Display patterns work but text/lines don't | Forgot the **update display** block | NXT display is double-buffered — call update after batched draws |
+| `ModuleNotFoundError: No module named 'serial'` | missing dependency | `pip install pyserial` |
+| "Port not found" | wrong port name | macOS `/dev/cu.NXT`; Windows: check Device Manager; Linux: `/dev/rfcomm0` |
 
-| File | Description |
-|------|-------------|
-| [`legonxt_turbowarp.js`](./legonxt_turbowarp.js) | Lego NXT over local Python Bridge (Full feature set) ⭐ |
-| [`legonxt-direct.js`](./legonxt-direct.js) | Lego NXT Direct Bluetooth Connection (Development version) |
-| [`legonxt_transpile_scratchlink.js`](./legonxt_transpile_scratchlink.js) | NXT Transpilation via ScratchLink (Scratch → NXC → RXE) ⭐ |
-| [`legonxt_transpile_direct.js`](./legonxt_transpile_direct.js) | NXT Transpilation Direct (Incomplete) |
-| [`legonxt_transpile_bridge.js`](./legonxt_transpile_bridge.js) | NXT Transpilation Bridge (Incomplete) |
+### NXT performance notes
 
-### Python Bridges
+The display is slow — each full `updateDisplay()` is **1–3 s**. Batch all draws
+then update once:
 
-| File | Description |
-|------|-------------|
-| [`nxt_bridge.py`](./nxt_bridge.py) | **WebSocket bridge** - Polling-based for reliable communication ⭐ |
-| [`nxt-diag.py`](./nxt-diag.py) | **Diagnostic tool** - Test Bluetooth connection |
-| [`nxt-pybluez-bridge.py`](./nxt-pybluez-bridge.py) | PyBluez alternative bridge (experimental) |
-| [`reset_nxt.sh`](./reset_nxt.sh) | Quick reset script for macOS pairing |
-| [`test_bt.py`](./test_bt.py) | Bluetooth discovery test |
-
-## 💻 Usage Examples
-
-### Basic Motor Control
-
-```scratch
-when flag clicked
-connect to [localhost:8080]
-wait until <connected?>
-motor [A] power [75] %
-wait (2) seconds
-motor [A] [brake]
+```text
+clearScreen()
+drawText('Line 1', 0, 0)
+drawText('Line 2', 0, 10)
+drawRect(0, 0, 100, 64, false)
+updateDisplay()      # one 1–3 s call
 ```
 
-### Sensor Reading
+### NXT protocol notes
 
-```scratch
-setup ultrasonic [S4]
-forever
-  say (join [Distance: ] (ultrasonic [S4] distance (cm)))
-end
-```
+Telegram structure: `[u16 length LE] [cmd type] [opcode] [payload...]`
 
-### Display Graphics
+| Byte | Meaning |
+|------|---------|
+| `0x00` | direct command (with reply) |
+| `0x80` | direct command (no reply) |
+| `0x01` | system command (with reply) |
+| `0x02` | reply telegram |
 
-```scratch
-clear screen
-draw text [HELLO NXT] at x:[10] y:[10]
-draw line from x:[0] y:[0] to x:[99] y:[63]
-🖥️ update display
-wait (3) seconds  // Display update takes 1-3 seconds
-```
+Frequently-used opcodes: `0x03` PLAY_TONE · `0x04` SET_OUT_STATE · `0x05`
+SET_IN_MODE · `0x07` GET_IN_VALS · `0x0B` GET_BATT_LVL · `0x0F`/`0x10`
+LS_WRITE/LS_READ (I²C) · `0x94`/`0x95` READ_IO_MAP/WRITE_IO_MAP (display).
 
-### Transpilation (NXC Compilation)
+Display memory: 100×64 mono, module ID `0xA0001`, offset 119, 800 bytes (8
+vertical pixels per byte, LSB top).
 
-1. Load [`legonxt_transpile_scratchlink.js`](./legonxt_transpile_scratchlink.js)
-2. Build your program with Scratch blocks
-3. Use "transpile project to NXC" block
-4. Use "compile NXC to .rxe" block (requires internet)
-5. Use "upload program to NXT" block
+---
 
-### Pattern Drawing
+## License
 
-```scratch
-draw pattern [checkerboard]
-wait (2) seconds
-draw pattern [smile]
-```
-
-## 🐛 Troubleshooting
-
-### Problem: No beep, no data received
-
-**Cause**: Bluetooth connection not established
-
-**Solution**:
-1. Run `blueutil --unpair <MAC-address>`
-2. Turn NXT off/on
-3. Re-pair with PIN 1234
-4. Test with `python nxt-diag.py`
-
-### Problem: Commands sent but nothing happens
-
-**Cause**: Bluetooth RFCOMM channel dropped
-
-**Solution**:
-- Run [`./reset_nxt.sh`](./reset_nxt.sh) to reset connection
-- Wait 10 seconds after pairing before testing
-
-### Problem: Display patterns work, but text/drawings don't
-
-**Cause**: Missing `updateDisplay()` method
-
-**Solution**: 
-- Ensure you're using [`legonxt_turbowarp.js`](./legonxt_turbowarp.js) (latest version)
-- Call "🖥️ update display" block after drawing operations
-- Wait 2-3 seconds for display update to complete
-
-### Problem: `ModuleNotFoundError: No module named 'serial'`
-
-**Cause**: Must install python package `pyserial`
-
-**Solution**:
-```bash
-pip install pyserial
-```
-
-### Problem: "Port not found" error
-
-**macOS**: Use `/dev/cu.NXT` (NOT e.g. `/dev/cu.Bluetooth-Incoming-Port`)
-
-**Windows**: Check Device Manager for COM port number
-
-**Linux**: Try `/dev/rfcomm0` or create with `rfcomm bind`
-
-## ⚡ Performance Notes
-
-### Display Operations
-- **Update time**: 1-3 seconds per display update
-- **Strategy**: Batch all drawing operations, call `updateDisplay()` once
-- **Buffer size**: 800 bytes (100×64 pixels ÷ 8 bits)
-
-```javascript
-// Good pattern (faster)
-clearScreen();
-drawText('Line 1', 0, 0);
-drawText('Line 2', 0, 10);
-drawRect(0, 0, 100, 64, false);
-updateDisplay();  // Single 1-3s operation
-
-// Bad pattern (slower)
-drawText('Line 1', 0, 0);
-updateDisplay();  // 1-3s wait
-drawText('Line 2', 0, 10);
-updateDisplay();  // Another 1-3s wait
-```
-
-## 🔬 Protocol Details
-
-### NXT Telegram Structure
-```
-[2-byte length (LE)] [command type] [opcode] [payload...]
-```
-
-**Command Types**:
-- `0x00`: Direct command (with reply)
-- `0x80`: Direct command (no reply)
-- `0x01`: System command (with reply)
-- `0x02`: Reply telegram
-
-**Key Opcodes**:
-- `0x03`: PLAY_TONE
-- `0x04`: SET_OUT_STATE (motors)
-- `0x05`: SET_IN_MODE (sensors)
-- `0x07`: GET_IN_VALS (read sensor)
-- `0x0B`: GET_BATT_LVL (battery)
-- `0x0F`/`0x10`: LS_WRITE/LS_READ (I2C)
-- `0x94`/`0x95`: READ_IO_MAP/WRITE_IO_MAP (display)
-
-### Display Memory Layout
-- **Resolution**: 100×64 pixels (monochrome)
-- **Module ID**: `0xA0001` (little-endian)
-- **Offset**: 119
-- **Format**: 800 bytes, 8 vertical pixels per byte
-- **Bit order**: LSB = top pixel, MSB = bottom pixel
-
-## 📜 License
-
-This project is licensed under the GNU General Public License v3.0.
-
-**Happy building! 🤖**
+Per-extension licenses live at the top of each `.js`. Most files are GPL-3.0;
+some are MPL-2.0. The Python bridges are GPL-3.0.
