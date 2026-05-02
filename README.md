@@ -1,16 +1,21 @@
 # turbowarp-lego
 
-A grab-bag of TurboWarp/Scratch extensions and Python bridges for talking to
-older LEGO bricks (NXT, EV3, Boost, Spike Prime, WeDo 2.0, Powered UP) over
-Bluetooth Classic, BLE, ScratchLink, Web Serial, or a local Python WebSocket
-bridge — whichever the platform/firmware actually allows.
+Python bridges, protocol notes, and setup guides for the TurboWarp/Scratch
+extensions that talk to older LEGO bricks (NXT, EV3, Boost, Spike Prime, WeDo
+2.0, Powered UP) over Bluetooth Classic, BLE, ScratchLink, Web Serial, or a
+local Python WebSocket bridge — whichever the platform/firmware actually
+allows.
 
-Most extensions need **Sandbox Mode disabled** in TurboWarp.
+The extension `.js` files themselves live in
+[`CrispStrobe/extensions/extensions/CrispStrobe/`](https://github.com/CrispStrobe/extensions/tree/main/extensions/CrispStrobe).
+They used to be mirrored here too, but were collapsed on 2026-05-02 to stop
+drift. The last working-tree of the four transpilers is on the
+[`wip-pre-collapse`](https://github.com/CrispStrobe/turbowarp-lego/tree/wip-pre-collapse)
+branch — those carry the Phase 2 + Phase 4 audit fixes documented in
+`LEARNINGS.md`, **untested on hardware**, and need to be ported to the
+gallery once a brick is available for validation.
 
-> **Where development happens:** the actively-curated, gallery-ready copies of
-> these extensions live in
-> [`CrispStrobe/extensions/extensions/CrispStrobe/`](https://github.com/CrispStrobe/extensions/tree/main/extensions/CrispStrobe).
-> This repo is the working sandbox + companion Python bridges + protocol notes.
+Most of those extensions need **Sandbox Mode disabled** in TurboWarp.
 
 ## Related repos
 
@@ -28,28 +33,19 @@ Most extensions need **Sandbox Mode disabled** in TurboWarp.
 
 | Category | File | Notes |
 |----------|------|-------|
-| **EV3 (original firmware)** | [`ev3_direct.js`](./ev3_direct.js) | Direct command streaming over Bluetooth/USB |
-| | [`ev3_lms_transpile.js`](./ev3_lms_transpile.js) | Streaming + transpile to lmsasm → EV3 bytecode (uses [legacy-lego-compiler](https://github.com/CrispStrobe/legacy-lego-compiler)) |
-| | [`ev3_universal.js`](./ev3_universal.js) | All EV3 connection backends in one extension (ScratchLink / Web Serial / WebSocket / direct HTTP) |
-| **EV3 (ev3dev firmware)** | [`ev3dev_py_transpile.js`](./ev3dev_py_transpile.js) | Streaming **and** transpile to Python; runs on the brick via the on-device bridge |
-| | [`ev3dev_ondevice.py`](./ev3dev_ondevice.py) | HTTP/HTTPS JSON bridge that runs on the EV3 (the canonical version is `ev3_bridge.py` in the `extensions` repo) |
+| **EV3 (ev3dev firmware)** | [`ev3dev_ondevice.py`](./ev3dev_ondevice.py) | HTTP/HTTPS JSON bridge that runs on the EV3. Actively-maintained version is `ev3_bridge.py` in the gallery; the local copy here has diverged. |
 | | [`ev3_local_bridge.py`](./ev3_local_bridge.py) | Local-host HTTP bridge variant — see [README_ev3_local_bridge.md](./README_ev3_local_bridge.md) |
-| **NXT** | [`legonxt_transpile_universal.js`](./legonxt_transpile_universal.js) | Multi-backend (ScratchLink / BTC / bridge); transpiles Scratch → NXC → `.rxe` via [legacy-lego-compiler](https://github.com/CrispStrobe/legacy-lego-compiler) |
-| | [`nxt_bridge.py`](./nxt_bridge.py) | WebSocket bridge for direct NXT control over RFCOMM (see [NXT setup](#nxt-setup-and-troubleshooting) below) |
+| **EV3 (original firmware)** | [`ev3-compiler-service/`](./ev3-compiler-service/) | Flask app + bundled `lmsasm-binary` used by the gallery's `ev3_lms_transpile.js` for server-side EV3-G compilation |
+| **NXT** | [`nxt_bridge.py`](./nxt_bridge.py) | WebSocket bridge for direct NXT control over RFCOMM (see [NXT setup](#nxt-setup-and-troubleshooting) below) |
 | | [`nxt-pybluez-bridge.py`](./nxt-pybluez-bridge.py) | Experimental PyBluez-based alternative bridge |
 | | [`nxt-diag.py`](./nxt-diag.py), [`test_bt.py`](./test_bt.py), [`reset_nxt.sh`](./reset_nxt.sh) | Diagnostic / pairing helpers |
-| **Spike Prime / Robot Inventor** | [`legospikeprime_btc_scratchlink.js`](./legospikeprime_btc_scratchlink.js) | BTC via ScratchLink (firmware 2.x) |
-| | [`legospikeprime_ble.js`](./legospikeprime_ble.js), [`legospike_ble.js`](./legospike_ble.js) | BLE (firmware 3.x) — work in progress |
-| | [`legospike_bridge.js`](./legospike_bridge.js) | WebSocket bridge variant |
-| | [`legospike_turbowarp_transpile.js`](./legospike_turbowarp_transpile.js) | Transpile project to MicroPython for the hub |
-| **Powered UP / Boost / Technic Hub / WeDo 2.0** | [`legoboost_universal.js`](./legoboost_universal.js) | Boost (BLE) |
-| | [`lego_poweredup.js`](./lego_poweredup.js) | Powered UP / Technic Hub (BLE) |
-| | [`lego_wedo2_universal.js`](./lego_wedo2_universal.js) | WeDo 2.0 (BLE) |
 | **Generic Python bridges** | [`lego_bridge.py`](./lego_bridge.py), [`lego_bridge_unified.py`](./lego_bridge_unified.py), [`universal_bridge.py`](./universal_bridge.py), [`universal_lego_bridge.py`](./universal_lego_bridge.py) | Older / experimental WebSocket bridges. See [README_bridges.md](./README_bridges.md) |
-| **Math/utility** | [`csp.js`](./csp.js) | Constraint-Satisfaction-Problem solver |
-| | [`planetemaths.js`](./planetemaths.js) | Math operations (rewritten from CodePM) |
-| | [`arrays.js`](./arrays.js) | Array / vector / tensor blocks |
-| | [`gamepad.js`](./gamepad.js) | Gamepad / controller input (untested) |
+
+The gallery extensions that pair with these bridges are listed at
+<https://github.com/CrispStrobe/extensions/tree/main/extensions/CrispStrobe>
+(`ev3*.js`, `legonxt*.js`, `legospike*.js`, `legoboost_universal.js`,
+`lego_poweredup.js`, `lego_wedo2_universal.js`, plus the math/utility
+extensions `arrays.js`, `csp.js`, `gamepad.js`, `planetemaths.js`).
 
 ## Connection options at a glance
 
