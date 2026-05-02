@@ -1,5 +1,5 @@
 // Name: LEGO EV3 LMS Transpiler
-// ID: CrispStrobe/ev3_lms_transpile
+// ID: ev3lms
 // Description: Supports both Live Streaming and transpiling to LMS bytecode for original EV3 firmware.
 // By: CrispStrobe <https://github.com/CrispStrobe>
 // License: MPL-2.0
@@ -1177,6 +1177,8 @@
           this.transpileIfElse(block, blocks);
         } else if (opcode === "control_repeat_until") {
           this.transpileRepeatUntil(block, blocks);
+        } else if (opcode === "control_wait_until") {
+          this.transpileWaitUntil(block, blocks);
         } else if (opcode === "control_stop") {
           this.transpileStop(block, blocks);
         }
@@ -2179,6 +2181,27 @@
       }
 
       this.addLine(`JR(${loopStart})`);
+      this.indentLevel--;
+      this.addLine(`${loopEnd}:`);
+    }
+
+    transpileWaitUntil(block, blocks) {
+      // "wait until" = "repeat until" with empty body, plus a small
+      // TIMER_WAIT to avoid hammering the CPU.
+      const loopStart = this.generateLabel("WAIT_UNTIL_START");
+      const loopEnd = this.generateLabel("WAIT_UNTIL_END");
+      const timerVar = this.getOrCreateTimer(0);
+
+      this.addComment("Wait until");
+      this.addLine(`${loopStart}:`);
+      this.indentLevel++;
+
+      const condition = this.evaluateCondition(block, "CONDITION", blocks);
+      this.addLine(`JR_TRUE(${condition}, ${loopEnd})`);
+      this.addLine(`TIMER_WAIT(10, ${timerVar})`);
+      this.addLine(`TIMER_READY(${timerVar})`);
+      this.addLine(`JR(${loopStart})`);
+
       this.indentLevel--;
       this.addLine(`${loopEnd}:`);
     }

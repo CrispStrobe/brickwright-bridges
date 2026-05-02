@@ -1,5 +1,5 @@
 // Name: LEGO Spike Transpiler
-// ID: CrispStrobe/legospike_turbowarp_transpile
+// ID: spikeprime
 // Description: Control Spike Prime via Live Streaming or transpile blocks to Python.
 // By: CrispStrobe <https://github.com/CrispStrobe>
 // License: MPL-2.0
@@ -848,7 +848,7 @@
   class SpikePrime {
     constructor(runtime, extensionId) {
       this._runtime =
-        runtime || (typeof vm !== "undefined" ? vm.runtime : null);
+        runtime || (typeof globalThis.vm !== "undefined" ? globalThis.vm.runtime : null);
       this._extensionId = extensionId;
       this._remainingText = "";
 
@@ -1214,7 +1214,7 @@ continuous_sensor_loop()
           }
         } else if (dataText.startsWith("GESTURE:")) {
           const gesture = dataText.substring(8).toLowerCase();
-          if (this._sensors.gestures.hasOwnProperty(gesture)) {
+          if (Object.prototype.hasOwnProperty.call(this._sensors.gestures, gesture)) {
             this._sensors.gestures[gesture] = true;
             setTimeout(() => {
               this._sensors.gestures[gesture] = false;
@@ -1239,7 +1239,7 @@ continuous_sensor_loop()
     }
 
     _parseResponse(response) {
-      if (response.hasOwnProperty("m")) {
+      if (Object.prototype.hasOwnProperty.call(response, "m")) {
         switch (response.m) {
           case 0:
             this._parseHubStatus(response);
@@ -1257,7 +1257,7 @@ continuous_sensor_loop()
             break;
         }
       }
-      if (response.hasOwnProperty("i")) {
+      if (Object.prototype.hasOwnProperty.call(response, "i")) {
         const openRequest = this._openRequests[response.i];
         delete this._openRequests[response.i];
         if (openRequest) openRequest.resolve();
@@ -1332,7 +1332,7 @@ continuous_sensor_loop()
     }
 
     _parseEventResponse(response) {
-      if (SpikeOrientation.hasOwnProperty(response.p)) {
+      if (Object.prototype.hasOwnProperty.call(SpikeOrientation, response.p)) {
         this._sensors.orientation = SpikeOrientation[response.p];
       }
       const gestureMap = {
@@ -1405,6 +1405,7 @@ continuous_sensor_loop()
       this.debugLog = [];
       this.broadcastHandlers = [];
       this.mainScripts = [];
+      this.procedures = {}; // proccode → { funcName, argNames, argIds, warp }
       this.soundFiles = [];
       this.usedMotors = new Set();
       this.usedSensors = new Set();
@@ -1420,6 +1421,7 @@ continuous_sensor_loop()
         this.generateHeader();
         this.generateStopHandlers();
         this.generateHelperFunctions();
+        this.generateListHelpers();
 
         // Collect broadcast handlers
         for (let i = 0; i < targets.length; i++) {
@@ -1453,6 +1455,11 @@ continuous_sensor_loop()
         }
         if (this.broadcastHandlers.length > 0) {
           this.addLine("");
+        }
+
+        // Procedures must be defined before any target's hat scripts can call them.
+        for (let i = 0; i < targets.length; i++) {
+          this.processProcedureDefinitions(targets[i]);
         }
 
         // Process each target
@@ -1517,6 +1524,7 @@ continuous_sensor_loop()
     generateHelperFunctions() {
       this.addLine("# Helper functions");
       this.addLine("variables = {}");
+      this.addLine("lists = {}");
       this.addLine("broadcasts = {}");
       this.addLine("movement_motors = ['A', 'B']  # Default movement motors");
       this.addLine("movement_speed = 75  # Default speed");
@@ -1552,6 +1560,179 @@ continuous_sensor_loop()
       this.indentLevel--;
       this.indentLevel--;
       this.addLine("");
+    }
+
+    generateListHelpers() {
+      this.addLine("# List helpers (Scratch is 1-indexed; supports 'first'/'last'/'random'/'any')");
+      this.addLine("def _list_index(lst, idx):");
+      this.indentLevel++;
+      this.addLine("n = len(lst)");
+      this.addLine("if n == 0: return -1");
+      this.addLine("if isinstance(idx, str):");
+      this.indentLevel++;
+      this.addLine("s = idx.lower()");
+      this.addLine('if s == "first": return 0');
+      this.addLine('if s == "last": return n - 1');
+      this.addLine('if s in ("any", "random"): return random.randint(0, n - 1)');
+      this.addLine("try: i = int(idx)");
+      this.addLine("except: return -1");
+      this.indentLevel--;
+      this.addLine("else:");
+      this.indentLevel++;
+      this.addLine("try: i = int(idx)");
+      this.addLine("except: return -1");
+      this.indentLevel--;
+      this.addLine("return i - 1 if 1 <= i <= n else -1");
+      this.indentLevel--;
+      this.addLine("");
+
+      this.addLine("def _list_delete(name, idx):");
+      this.indentLevel++;
+      this.addLine("lst = lists.setdefault(name, [])");
+      this.addLine('if isinstance(idx, str) and idx.lower() == "all":');
+      this.indentLevel++;
+      this.addLine("del lst[:]");
+      this.addLine("return");
+      this.indentLevel--;
+      this.addLine("i = _list_index(lst, idx)");
+      this.addLine("if i >= 0: del lst[i]");
+      this.indentLevel--;
+      this.addLine("");
+
+      this.addLine("def _list_insert(name, idx, item):");
+      this.indentLevel++;
+      this.addLine("lst = lists.setdefault(name, [])");
+      this.addLine("n = len(lst)");
+      this.addLine("if isinstance(idx, str):");
+      this.indentLevel++;
+      this.addLine("s = idx.lower()");
+      this.addLine('if s == "last": lst.append(item); return');
+      this.addLine('if s == "first": lst.insert(0, item); return');
+      this.addLine('if s in ("any", "random"): lst.insert(random.randint(0, n), item); return');
+      this.addLine("try: i = int(idx)");
+      this.addLine("except: return");
+      this.indentLevel--;
+      this.addLine("else:");
+      this.indentLevel++;
+      this.addLine("try: i = int(idx)");
+      this.addLine("except: return");
+      this.indentLevel--;
+      this.addLine("if 1 <= i <= n + 1: lst.insert(i - 1, item)");
+      this.indentLevel--;
+      this.addLine("");
+
+      this.addLine("def _list_replace(name, idx, item):");
+      this.indentLevel++;
+      this.addLine("lst = lists.setdefault(name, [])");
+      this.addLine("i = _list_index(lst, idx)");
+      this.addLine("if i >= 0: lst[i] = item");
+      this.indentLevel--;
+      this.addLine("");
+
+      this.addLine("def _list_item(name, idx):");
+      this.indentLevel++;
+      this.addLine("lst = lists.setdefault(name, [])");
+      this.addLine("i = _list_index(lst, idx)");
+      this.addLine('return lst[i] if i >= 0 else ""');
+      this.indentLevel--;
+      this.addLine("");
+
+      this.addLine("def _list_itemnum(name, item):");
+      this.indentLevel++;
+      this.addLine("lst = lists.setdefault(name, [])");
+      this.addLine("target = str(item).lower()");
+      this.addLine("for k in range(len(lst)):");
+      this.indentLevel++;
+      this.addLine("if str(lst[k]).lower() == target: return k + 1");
+      this.indentLevel--;
+      this.addLine("return 0");
+      this.indentLevel--;
+      this.addLine("");
+
+      this.addLine("def _list_contains(name, item):");
+      this.indentLevel++;
+      this.addLine("return _list_itemnum(name, item) > 0");
+      this.indentLevel--;
+      this.addLine("");
+
+      this.addLine("def _list_length(name):");
+      this.indentLevel++;
+      this.addLine("return len(lists.setdefault(name, []))");
+      this.indentLevel--;
+      this.addLine("");
+
+      this.addLine("def _list_contents(lst):");
+      this.indentLevel++;
+      this.addLine("if all(isinstance(x, str) and len(x) == 1 for x in lst):");
+      this.indentLevel++;
+      this.addLine('return "".join(lst)');
+      this.indentLevel--;
+      this.addLine('return " ".join(str(x) for x in lst)');
+      this.indentLevel--;
+      this.addLine("");
+    }
+
+    // Pulls the mutation off a procedures_definition / procedures_call block.
+    parseProcMutation(block) {
+      const mut = block && block.mutation;
+      if (!mut) return null;
+      const parse = (v, fallback) => {
+        if (v == null) return fallback;
+        if (typeof v !== "string") return v;
+        try { return JSON.parse(v); } catch (e) { return fallback; }
+      };
+      return {
+        proccode: mut.proccode || "",
+        argumentnames: parse(mut.argumentnames, []),
+        argumentids: parse(mut.argumentids, []),
+        argumentdefaults: parse(mut.argumentdefaults, []),
+        warp: String(mut.warp) === "true",
+      };
+    }
+
+    procFuncName(proccode) {
+      const head = proccode.replace(/%[snb]/g, "").trim();
+      return "proc_" + this.sanitizeName(head);
+    }
+
+    processProcedureDefinitions(target) {
+      const blocks = target.blocks;
+      const blockArray = blocks._blocks;
+      const blockKeys = Object.keys(blockArray);
+
+      for (let i = 0; i < blockKeys.length; i++) {
+        const defBlock = blockArray[blockKeys[i]];
+        if (defBlock.opcode !== "procedures_definition") continue;
+
+        const protoId = this.getSubstackId(defBlock, "custom_block");
+        const proto = protoId ? blockArray[protoId] : null;
+        const info = this.parseProcMutation(proto);
+        if (!info) continue;
+
+        const funcName = this.procFuncName(info.proccode);
+        const argNames = info.argumentnames.map((n) => "arg_" + this.sanitizeName(n));
+        this.procedures[info.proccode] = {
+          funcName: funcName,
+          argNames: argNames,
+          argIds: info.argumentids,
+          warp: info.warp,
+        };
+
+        this.addLine("# Custom block: " + info.proccode);
+        if (info.warp) {
+          this.addLine("# (run without screen refresh — atomicity is not modeled in MicroPython here)");
+        }
+        this.addLine("def " + funcName + "(" + argNames.join(", ") + "):");
+        this.indentLevel++;
+        const firstBodyId = defBlock.next;
+        if (firstBodyId) {
+          this.processBlockChain(firstBodyId, blocks);
+        } else {
+          this.addLine("pass");
+        }
+        this.indentLevel--;
+        this.addLine("");
+      }
     }
 
     generateBroadcastHelper() {
@@ -1717,6 +1898,24 @@ continuous_sensor_loop()
         const broadcastName = this.getFieldValue(hatBlock, "BROADCAST_OPTION");
         this.addLine(
           'broadcasts["' + broadcastName + '"].append(' + funcName + ")",
+        );
+        this.addLine("");
+      } else {
+        // Unsupported hat. Spike's runtime model is single-threaded
+        // (broadcasts run synchronously, no thread/async pump), so we cannot
+        // wire up a keypress poller without rearchitecting. Be honest:
+        // function body is emitted but never called — log and tag it.
+        const reason =
+          opcode === "event_whenkeypressed"
+            ? "Spike runtime is single-threaded — no concurrent button poll"
+            : "not implemented for Spike";
+        console.warn(
+          "[spikeprime] Unsupported hat opcode: " + opcode + ". " +
+          "Body of '" + funcName + "' was generated but is never called. " +
+          "(" + reason + ")",
+        );
+        this.addLine(
+          "# WARNING: hat '" + opcode + "' is not wired up (" + reason + ")",
         );
         this.addLine("");
       }
@@ -2244,6 +2443,16 @@ continuous_sensor_loop()
         } else {
           this.addLine(`pass`);
         }
+        // Yield: keeps MicroPython responsive (sensor / BLE callbacks) and
+        // mirrors control_forever's pacing.
+        this.addLine(`utime.sleep_ms(10)`);
+        this.indentLevel--;
+      } else if (opcode === "control_wait_until") {
+        const condition = this.getInputValue(block, "CONDITION", blocks);
+        this.addLine(`while not (${condition}):`);
+        this.indentLevel++;
+        this.addLine(`check_stop()`);
+        this.addLine(`utime.sleep_ms(10)`);
         this.indentLevel--;
       } else if (opcode === "control_stop") {
         const stopOption = this.getFieldValue(block, "STOP_OPTION") || "all";
@@ -2297,9 +2506,50 @@ continuous_sensor_loop()
         const varName = this.getFieldValue(block, "VARIABLE");
         const value = this.getInputValue(block, "VALUE", blocks);
         this.addLine(`variables["${varName}"] = variables.get("${varName}", 0) + (${value})`);
+      } else if (opcode === "data_showvariable" || opcode === "data_hidevariable" ||
+                 opcode === "data_showlist" || opcode === "data_hidelist") {
+        // No stage on the hub — recognise but no-op.
+        this.addLine(`# ${opcode} (no-op on Spike hub — no stage)`);
       }
 
+      // List blocks
+      else if (opcode === "data_addtolist") {
+        const listName = this.getFieldValue(block, "LIST");
+        const item = this.getInputValue(block, "ITEM", blocks);
+        this.addLine(`lists.setdefault("${listName}", []).append(${item})`);
+      } else if (opcode === "data_deleteoflist") {
+        const listName = this.getFieldValue(block, "LIST");
+        const idx = this.getInputValue(block, "INDEX", blocks);
+        this.addLine(`_list_delete("${listName}", ${idx})`);
+      } else if (opcode === "data_deletealloflist") {
+        const listName = this.getFieldValue(block, "LIST");
+        this.addLine(`lists["${listName}"] = []`);
+      } else if (opcode === "data_insertatlist") {
+        const listName = this.getFieldValue(block, "LIST");
+        const idx = this.getInputValue(block, "INDEX", blocks);
+        const item = this.getInputValue(block, "ITEM", blocks);
+        this.addLine(`_list_insert("${listName}", ${idx}, ${item})`);
+      } else if (opcode === "data_replaceitemoflist") {
+        const listName = this.getFieldValue(block, "LIST");
+        const idx = this.getInputValue(block, "INDEX", blocks);
+        const item = this.getInputValue(block, "ITEM", blocks);
+        this.addLine(`_list_replace("${listName}", ${idx}, ${item})`);
+      }
 
+      // Procedure call
+      else if (opcode === "procedures_call") {
+        const info = this.parseProcMutation(block);
+        const proc = info && this.procedures[info.proccode];
+        if (!proc) {
+          this.addLine(`# UNRESOLVED custom block call: ${info ? info.proccode : "(no mutation)"}`);
+        } else {
+          const args = proc.argIds.map((id) => {
+            const v = this.getInputValue(block, id, blocks);
+            return v == null ? "0" : v;
+          });
+          this.addLine(`${proc.funcName}(${args.join(", ")})`);
+        }
+      }
 
       // Default - Unknown block
       else {
@@ -2521,6 +2771,34 @@ continuous_sensor_loop()
         const varName = this.getFieldValue(block, "VARIABLE");
         return `variables.get("${varName}", 0)`;
       }
+      // Custom-block argument reporters
+      else if (
+        block.opcode === "argument_reporter_string_number" ||
+        block.opcode === "argument_reporter_boolean"
+      ) {
+        const argName = this.getFieldValue(block, "VALUE") || "";
+        return `arg_${this.sanitizeName(argName)}`;
+      }
+      // Lists (reporters)
+      else if (block.opcode === "data_itemoflist") {
+        const listName = this.getFieldValue(block, "LIST");
+        const idx = this.getInputValue(block, "INDEX", blocks);
+        return `_list_item("${listName}", ${idx})`;
+      } else if (block.opcode === "data_itemnumoflist") {
+        const listName = this.getFieldValue(block, "LIST");
+        const item = this.getInputValue(block, "ITEM", blocks);
+        return `_list_itemnum("${listName}", ${item})`;
+      } else if (block.opcode === "data_lengthoflist") {
+        const listName = this.getFieldValue(block, "LIST");
+        return `_list_length("${listName}")`;
+      } else if (block.opcode === "data_listcontainsitem") {
+        const listName = this.getFieldValue(block, "LIST");
+        const item = this.getInputValue(block, "ITEM", blocks);
+        return `_list_contains("${listName}", ${item})`;
+      } else if (block.opcode === "data_listcontents") {
+        const listName = this.getFieldValue(block, "LIST");
+        return `_list_contents(lists.setdefault("${listName}", []))`;
+      }
       
       // SPIKE sensor reporters
       else if (block.opcode === "spikeprime_getPosition") {
@@ -2612,7 +2890,19 @@ continuous_sensor_loop()
         return `(${num1} % ${num2})`;
       } else if (block.opcode === "operator_round") {
         const num = this.getInputValue(block, "NUM", blocks);
-        return `round(${num})`;
+        // Scratch rounds half-away-from-zero; Python's round() is banker's.
+        return `int(math.floor(float(${num}) + 0.5))`;
+      } else if (block.opcode === "operator_letter_of") {
+        const idx = this.getInputValue(block, "LETTER", blocks);
+        const str = this.getInputValue(block, "STRING", blocks);
+        return `(str(${str})[int(${idx}) - 1] if 1 <= int(${idx}) <= len(str(${str})) else "")`;
+      } else if (block.opcode === "operator_length") {
+        const str = this.getInputValue(block, "STRING", blocks);
+        return `len(str(${str}))`;
+      } else if (block.opcode === "operator_contains") {
+        const haystack = this.getInputValue(block, "STRING1", blocks);
+        const needle = this.getInputValue(block, "STRING2", blocks);
+        return `(str(${needle}).lower() in str(${haystack}).lower())`;
       } else if (block.opcode === "operator_mathop") {
         const operator = this.getFieldValue(block, "OPERATOR");
         const num = this.getInputValue(block, "NUM", blocks);

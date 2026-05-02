@@ -1,4 +1,9 @@
 // Name: LEGO EV3Dev Python
+// ID: scratchtoev3
+// Description: Control EV3Dev via Live Streaming or generate/run Python code on the brick.
+// By: CrispStrobe <https://github.com/CrispStrobe>
+// License: MPL-2.0
+// Name: LEGO EV3Dev Python
 // ID: CrispStrobe/ev3dev_py_transpile
 // Description: Control EV3Dev via Live Streaming or generate/run Python code on the brick.
 // By: CrispStrobe <https://github.com/CrispStrobe>
@@ -220,7 +225,6 @@
       setConnection: "Verbindung [MODE] IP [IP] Port [PORT]",
       setEV3IP: "setze EV3 IP auf [IP]",
       setCredentials: "Anmeldedaten Benutzer [USER] Passwort [PASS]", // for htpasswd
-      enableStreaming: "Streaming-Modus aktivieren",
       enableStreaming: "Streaming-Modus aktivieren",
       disableStreaming: "Streaming-Modus deaktivieren",
       testConnection: "EV3 Verbindung testen",
@@ -768,7 +772,10 @@
       this.authHeader = null;
 
       // Streaming mode state
-      this.streamingMode = false;
+      // Default ON so command blocks (beep, motor_run, set_led, ...) actually
+      // reach the bridge once the user configures a connection. Pure-transpile
+      // users can drop the `disable streaming` block.
+      this.streamingMode = true;
 
       this.sensorCache = {};
       this.SENSOR_CACHE_MS = 50; // Read sensors max once per 50ms
@@ -908,7 +915,7 @@
             arguments: {
               MODE: { type: Scratch.ArgumentType.STRING, menu: "connectionModes", defaultValue: "https" },
               IP: { type: Scratch.ArgumentType.STRING, defaultValue: "192.168.178.50" },
-              PORT: { type: Scratch.ArgumentType.NUMBER, defaultValue: 443 },
+              PORT: { type: Scratch.ArgumentType.NUMBER, defaultValue: 8443 },
             },
           },
           {
@@ -1885,7 +1892,22 @@
     setConnectionMode(args) {
       this.ev3Protocol = args.MODE;
       this.ev3IP = args.IP;
-      this.ev3Port = args.PORT;
+
+      // Per-protocol port defaults: HTTP→8080, HTTPS→8443. The block has a
+      // single PORT field, so when the user leaves it at a default that
+      // belongs to the *other* protocol we transparently swap.
+      const httpDefaults = new Set([80, 8080]);
+      const httpsDefaults = new Set([443, 8443]);
+      let port = Number(args.PORT);
+      if (this.ev3Protocol === "http" && httpsDefaults.has(port)) {
+        port = 8080;
+      } else if (this.ev3Protocol === "https" && httpDefaults.has(port)) {
+        port = 8443;
+      }
+      this.ev3Port = port;
+
+      // Configuring a connection is an explicit opt-in to direct mode.
+      this.streamingMode = true;
 
       console.log(
         `Connection: ${this.ev3Protocol}://${this.ev3IP}:${this.ev3Port}`,
@@ -1928,7 +1950,11 @@
         );
         const data = await response.json();
         this.log("Connection test result", data);
-        return data.status === "ev3_bridge_active" ? t("connected") : "Error";
+        if (data.status === "ev3_bridge_active") {
+          this.streamingMode = true;
+          return t("connected");
+        }
+        return "Error";
       } catch (e) {
         this.log("Connection test failed", { error: e.message });
         return t("notConnected");
@@ -1940,6 +1966,13 @@
      */
     async sendCommand(cmd, params = {}, retries = 1, timeout = null) {
       if (!this.streamingMode) {
+        // Loud warning: silent drops are why play-tone "did nothing" while
+        // testConnection still reported Connected.
+        console.warn(
+          `[EV3] Dropping "${cmd}" because streaming is disabled. ` +
+          `Use the "set connection" or "enable streaming" block first.`,
+          params,
+        );
         this.log("Command not sent - streaming disabled", { cmd, params });
         return null;
       }
@@ -3983,6 +4016,8 @@
       this.debugLog = [];
       this.broadcastHandlers = [];
       this.mainScripts = [];
+      this.keyHandlers = []; // unique scratch-key names with at least one hat
+      this.procedures = {}; // proccode → { funcName, argNames (sanitized), argIds }
       this.soundFiles = [];
       this.usedMotors = new Set();
       this.usedSensors = new Set();
@@ -4015,6 +4050,7 @@
         this.generateStopHandlers();
         this.generateComponentInit();
         this.generateSpriteStateManager();
+        this.generateListHelpers();
 
         // Collect broadcast handlers
         for (let i = 0; i < targets.length; i++) {
@@ -4050,6 +4086,12 @@
           this.addLine("");
         }
 
+        // Process custom-block (procedures_definition) hats first so the
+        // top-level `def proc_*` exists before any `procedures_call` site.
+        for (let i = 0; i < targets.length; i++) {
+          this.processProcedureDefinitions(targets[i]);
+        }
+
         // Process each target
         for (let i = 0; i < targets.length; i++) {
           const target = targets[i];
@@ -4061,6 +4103,9 @@
         // Add helpers
         this.generateBroadcastHelper();
         this.generateBroadcastWaitHelper();
+        if (this.keyHandlers.length > 0) {
+          this.generateKeyboardMonitor();
+        }
         this.generateMainExecution();
 
         this.log("=== Transpilation Complete ===", {
@@ -4283,7 +4328,120 @@
       this.addLine("");
       this.addLine("# Variables");
       this.addLine("variables = {}");
+      this.addLine("lists = {}");
       this.addLine("broadcasts = {}");
+      this.addLine("key_handlers = {}");
+      this.addLine("");
+    }
+
+    generateListHelpers() {
+      this.addLine("# List helpers (Scratch is 1-indexed and accepts 'first'/'last'/'random'/'any')");
+      this.addLine("def _list_index(lst, idx):");
+      this.indentLevel++;
+      this.addLine("n = len(lst)");
+      this.addLine("if n == 0: return -1");
+      this.addLine("if isinstance(idx, str):");
+      this.indentLevel++;
+      this.addLine("s = idx.lower()");
+      this.addLine('if s == "first": return 0');
+      this.addLine('if s == "last": return n - 1');
+      this.addLine('if s in ("any", "random"): return random.randint(0, n - 1)');
+      this.addLine("try: i = int(idx)");
+      this.addLine("except (ValueError, TypeError): return -1");
+      this.indentLevel--;
+      this.addLine("else:");
+      this.indentLevel++;
+      this.addLine("try: i = int(idx)");
+      this.addLine("except (ValueError, TypeError): return -1");
+      this.indentLevel--;
+      this.addLine("return i - 1 if 1 <= i <= n else -1");
+      this.indentLevel--;
+      this.addLine("");
+
+      this.addLine("def _list_delete(name, idx):");
+      this.indentLevel++;
+      this.addLine("lst = lists.setdefault(name, [])");
+      this.addLine('if isinstance(idx, str) and idx.lower() == "all":');
+      this.indentLevel++;
+      this.addLine("lst.clear()");
+      this.addLine("return");
+      this.indentLevel--;
+      this.addLine("i = _list_index(lst, idx)");
+      this.addLine("if i >= 0: del lst[i]");
+      this.indentLevel--;
+      this.addLine("");
+
+      this.addLine("def _list_insert(name, idx, item):");
+      this.indentLevel++;
+      this.addLine("lst = lists.setdefault(name, [])");
+      this.addLine("n = len(lst)");
+      this.addLine("if isinstance(idx, str):");
+      this.indentLevel++;
+      this.addLine("s = idx.lower()");
+      this.addLine('if s == "last": lst.append(item); return');
+      this.addLine('if s == "first": lst.insert(0, item); return');
+      this.addLine('if s in ("any", "random"): lst.insert(random.randint(0, n), item); return');
+      this.addLine("try: i = int(idx)");
+      this.addLine("except (ValueError, TypeError): return");
+      this.indentLevel--;
+      this.addLine("else:");
+      this.indentLevel++;
+      this.addLine("try: i = int(idx)");
+      this.addLine("except (ValueError, TypeError): return");
+      this.indentLevel--;
+      this.addLine("if 1 <= i <= n + 1: lst.insert(i - 1, item)");
+      this.indentLevel--;
+      this.addLine("");
+
+      this.addLine("def _list_replace(name, idx, item):");
+      this.indentLevel++;
+      this.addLine("lst = lists.setdefault(name, [])");
+      this.addLine("i = _list_index(lst, idx)");
+      this.addLine("if i >= 0: lst[i] = item");
+      this.indentLevel--;
+      this.addLine("");
+
+      this.addLine("def _list_item(name, idx):");
+      this.indentLevel++;
+      this.addLine("lst = lists.setdefault(name, [])");
+      this.addLine("i = _list_index(lst, idx)");
+      this.addLine('return lst[i] if i >= 0 else ""');
+      this.indentLevel--;
+      this.addLine("");
+
+      this.addLine("def _list_itemnum(name, item):");
+      this.indentLevel++;
+      this.addLine("lst = lists.setdefault(name, [])");
+      this.addLine("target = str(item).lower()");
+      this.addLine("for k, v in enumerate(lst):");
+      this.indentLevel++;
+      this.addLine("if str(v).lower() == target: return k + 1");
+      this.indentLevel--;
+      this.addLine("return 0");
+      this.indentLevel--;
+      this.addLine("");
+
+      this.addLine("def _list_contains(name, item):");
+      this.indentLevel++;
+      this.addLine("return _list_itemnum(name, item) > 0");
+      this.indentLevel--;
+      this.addLine("");
+
+      this.addLine("def _list_length(name):");
+      this.indentLevel++;
+      this.addLine("return len(lists.setdefault(name, []))");
+      this.indentLevel--;
+      this.addLine("");
+
+      this.addLine("def _list_contents(lst):");
+      this.indentLevel++;
+      this.addLine("# Scratch joins single-character items with no separator, otherwise with space.");
+      this.addLine("if all(isinstance(x, str) and len(x) == 1 for x in lst):");
+      this.indentLevel++;
+      this.addLine('return "".join(lst)');
+      this.indentLevel--;
+      this.addLine('return " ".join(str(x) for x in lst)');
+      this.indentLevel--;
       this.addLine("");
     }
 
@@ -4368,6 +4526,61 @@
       this.addLine("");
     }
 
+    generateKeyboardMonitor() {
+      // Map Scratch KEY_OPTION values to ev3dev Button attribute names. The
+      // brick only has 5 directional buttons + a backspace; letters/digits
+      // have no equivalent. Unmapped keys are reported once at startup.
+      this.addLine("# Brick-button → Scratch keypress dispatch");
+      this.addLine("def monitor_keys():");
+      this.indentLevel++;
+      this.addLine("btn = Button()");
+      this.addLine("key_to_attr = {");
+      this.indentLevel++;
+      this.addLine('"up arrow": "up",');
+      this.addLine('"down arrow": "down",');
+      this.addLine('"left arrow": "left",');
+      this.addLine('"right arrow": "right",');
+      this.addLine('"space": "enter",');
+      this.addLine('"enter": "enter",');
+      this.indentLevel--;
+      this.addLine("}");
+      this.addLine("# Warn once for keys we cannot dispatch (letters, digits).");
+      this.addLine('for k in list(key_handlers.keys()):');
+      this.indentLevel++;
+      this.addLine('if k != "any" and k not in key_to_attr:');
+      this.indentLevel++;
+      this.addLine('print(f"[ev3] Ignoring \'when {k} pressed\' — only arrow/enter/space map to brick buttons.")');
+      this.indentLevel--;
+      this.indentLevel--;
+      this.addLine("prev = {k: False for k in key_to_attr}");
+      this.addLine("while not stop_all:");
+      this.indentLevel++;
+      this.addLine("for scratch_key, attr in key_to_attr.items():");
+      this.indentLevel++;
+      this.addLine("now = bool(getattr(btn, attr, False))");
+      this.addLine("if now and not prev[scratch_key]:");
+      this.indentLevel++;
+      this.addLine("# Edge-trigger: fire on press, not while held.");
+      this.addLine("for h in key_handlers.get(scratch_key, []):");
+      this.indentLevel++;
+      this.addLine("threading.Thread(target=h, daemon=True).start()");
+      this.indentLevel--;
+      this.addLine('for h in key_handlers.get("any", []):');
+      this.indentLevel++;
+      this.addLine("threading.Thread(target=h, daemon=True).start()");
+      this.indentLevel--;
+      this.indentLevel--;
+      this.addLine("prev[scratch_key] = now");
+      this.indentLevel--;
+      this.addLine("sleep(0.05)");
+      this.indentLevel--;
+      this.indentLevel--;
+      this.addLine("");
+      this.addLine("key_thread = threading.Thread(target=monitor_keys, daemon=True)");
+      this.addLine("key_thread.start()");
+      this.addLine("");
+    }
+
     generateMainExecution() {
       if (this.mainScripts.length > 0) {
         this.addLine("# Main execution (threaded for concurrency)");
@@ -4407,6 +4620,76 @@
         this.indentLevel--;
         this.indentLevel--;
         this.indentLevel--;
+      }
+    }
+
+    // Pulls the mutation off a procedures_definition / procedures_call block.
+    // Mutation fields come as JSON strings; tolerate already-parsed objects.
+    parseProcMutation(block) {
+      const mut = block && block.mutation;
+      if (!mut) return null;
+      const parse = (v, fallback) => {
+        if (v == null) return fallback;
+        if (typeof v !== "string") return v;
+        try { return JSON.parse(v); } catch (e) { return fallback; }
+      };
+      return {
+        proccode: mut.proccode || "",
+        argumentnames: parse(mut.argumentnames, []),
+        argumentids: parse(mut.argumentids, []),
+        argumentdefaults: parse(mut.argumentdefaults, []),
+        warp: String(mut.warp) === "true",
+      };
+    }
+
+    procFuncName(proccode) {
+      // proccode is like "do_thing %s with %b". We strip placeholders and
+      // sanitize. Different signatures with the same head-word will map to
+      // the same Python function — Scratch already enforces unique proccodes
+      // per project so this is safe.
+      const head = proccode.replace(/%[snb]/g, "").trim();
+      return "proc_" + this.sanitizeName(head);
+    }
+
+    processProcedureDefinitions(target) {
+      const blocks = target.blocks;
+      const blockArray = blocks._blocks;
+      const blockKeys = Object.keys(blockArray);
+
+      for (let i = 0; i < blockKeys.length; i++) {
+        const defBlock = blockArray[blockKeys[i]];
+        if (defBlock.opcode !== "procedures_definition") continue;
+
+        // Find the prototype shadow (input "custom_block").
+        const protoId = this.getSubstackId(defBlock, "custom_block");
+        const proto = protoId ? blockArray[protoId] : null;
+        const info = this.parseProcMutation(proto);
+        if (!info) continue;
+
+        const funcName = this.procFuncName(info.proccode);
+        const argNames = info.argumentnames.map((n) => "arg_" + this.sanitizeName(n));
+        this.procedures[info.proccode] = {
+          funcName: funcName,
+          argNames: argNames,
+          argIds: info.argumentids,
+          warp: info.warp,
+        };
+
+        this.addLine("# Custom block: " + info.proccode);
+        if (info.warp) {
+          this.addLine("# (Run without screen refresh — atomicity is not " +
+                       "modeled in the threaded runtime; runs as normal.)");
+        }
+        this.addLine("def " + funcName + "(" + argNames.join(", ") + "):");
+        this.indentLevel++;
+        const firstBodyId = defBlock.next;
+        if (firstBodyId) {
+          this.processBlockChain(firstBodyId, blocks);
+        } else {
+          this.addLine("pass");
+        }
+        this.indentLevel--;
+        this.addLine("");
       }
     }
 
@@ -4487,6 +4770,30 @@
           'broadcasts["' + broadcastName + '"].append(' + funcName + ")",
         );
         this.addLine("");
+      } else if (opcode === "event_whenkeypressed") {
+        const key = this.getFieldValue(hatBlock, "KEY_OPTION") || "any";
+        if (!this.keyHandlers.includes(key)) this.keyHandlers.push(key);
+        // Brick has only up/down/left/right/enter buttons. Letter and digit
+        // keys are not mappable; the runtime ignores them with a one-time
+        // print so kids see why their hat isn't firing.
+        this.addLine('key_handlers.setdefault("' + key + '", []).append(' + funcName + ")");
+        this.addLine("");
+      } else {
+        // Unsupported hat (event_whenthisspriteclicked, event_whenstageclicked,
+        // event_whenbackdropswitchesto, event_whengreaterthan,
+        // control_start_as_clone, ...). The function body has already been
+        // emitted, but there is no runtime that will ever invoke it. Warn
+        // loudly so projects relying on these hats don't silently do nothing.
+        console.warn(
+          "[scratchtoev3] Unsupported hat opcode: " + opcode + ". " +
+          "Body of '" + funcName + "' was generated but is never called. " +
+          "Use 'when flag clicked', 'when I receive', or 'when key pressed' instead.",
+        );
+        this.addLine(
+          "# WARNING: hat '" + opcode + "' is not supported on the brick — " +
+          "this function is never called.",
+        );
+        this.addLine("");
       }
     }
 
@@ -4506,7 +4813,7 @@
         this.indentLevel++;
         this.addLine("motor.on(SpeedPercent(" + speed + "))");
         this.indentLevel--;
-      } else if (opcode === "scratchtoev3_ev3MotorRunFor") {
+      } else if (block.opcode === "scratchtoev3_ev3MotorRunFor") {
         const port = this.getInputValue(block, "PORT", blocks).replace(
           /"/g,
           "",
@@ -4524,7 +4831,7 @@
             ")",
         );
         this.indentLevel--;
-      } else if (opcode === "scratchtoev3_ev3MotorRunDegrees") {
+      } else if (block.opcode === "scratchtoev3_ev3MotorRunDegrees") {
         const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
         const degrees = this.getInputValue(block, "DEGREES", blocks);
         const speed = this.getInputValue(block, "SPEED", blocks);
@@ -4536,7 +4843,7 @@
         this.indentLevel--;
       } 
       
-      else if (opcode === "scratchtoev3_ev3MotorRunTimed") {
+      else if (block.opcode === "scratchtoev3_ev3MotorRunTimed") {
         const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
         const seconds = this.getInputValue(block, "SECONDS", blocks);
         const speed = this.getInputValue(block, "SPEED", blocks);
@@ -4547,7 +4854,7 @@
         this.indentLevel--;
       } 
       
-      else if (opcode === "scratchtoev3_ev3MotorRunToAbsPos") {
+      else if (block.opcode === "scratchtoev3_ev3MotorRunToAbsPos") {
         const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
         const pos = this.getInputValue(block, "POS", blocks);
         const speed = this.getInputValue(block, "SPEED", blocks);
@@ -4557,7 +4864,7 @@
         // on_to_position speed must be positive in Python
         this.addLine(`motor.on_to_position(SpeedPercent(abs(${speed})), ${pos}, block=False)`);
         this.indentLevel--;
-      } else if (opcode === "scratchtoev3_servoRunToPosition") {
+      } else if (block.opcode === "scratchtoev3_servoRunToPosition") {
         const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
         const pos = this.getInputValue(block, "POS", blocks);
         const speed = this.getInputValue(block, "SPEED", blocks);
@@ -4572,7 +4879,7 @@
         this.addLine(`s.run_to_abs_pos(position_sp=${pos}, speed_sp=SpeedPercent(${speed}))`);
         this.indentLevel--;
       }
-      else if (opcode === "scratchtoev3_servoStop") {
+      else if (block.opcode === "scratchtoev3_servoStop") {
         const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
         this.addLine(`from ev3dev2.motor import ServoMotor`);
         this.addLine(`s = ServoMotor(OUTPUT_${port})`);
@@ -4581,7 +4888,7 @@
       
       
       
-      else if (opcode === "scratchtoev3_ev3MotorStop") {
+      else if (block.opcode === "scratchtoev3_ev3MotorStop") {
         const port = this.getInputValue(block, "PORT", blocks).replace(
           /"/g,
           "",
@@ -4595,7 +4902,7 @@
         this.indentLevel++;
         this.addLine('motor.stop(stop_action="' + brake + '")');
         this.indentLevel--;
-      } else if (opcode === "scratchtoev3_ev3MotorSetRamping") {
+      } else if (block.opcode === "scratchtoev3_ev3MotorSetRamping") {
         const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
         const ms = this.getInputValue(block, "MS", blocks);
         this.addLine(`motor = get_motor("${port}")`);
@@ -4606,7 +4913,7 @@
         this.indentLevel--;
       }
       
-      else if (opcode === "scratchtoev3_ev3TankDrive") {
+      else if (block.opcode === "scratchtoev3_ev3TankDrive") {
         const left = this.getInputValue(block, "LEFT", blocks);
         const right = this.getInputValue(block, "RIGHT", blocks);
         const rotations = this.getInputValue(block, "ROTATIONS", blocks);
@@ -4629,7 +4936,7 @@
             ", block=True)",
         );
         this.indentLevel--;
-      } else if (opcode === "scratchtoev3_ev3DcMotorRun") {
+      } else if (block.opcode === "scratchtoev3_ev3DcMotorRun") {
         const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
         const speed = this.getInputValue(block, "SPEED", blocks);
         this.addLine(`from ev3dev2.motor import DcMotor`); // Ensure import
@@ -4640,17 +4947,17 @@
         this.addLine(`m.run_direct()`);
         this.indentLevel--;
       } 
-      else if (opcode === "scratchtoev3_ev3DcMotorStop") {
+      else if (block.opcode === "scratchtoev3_ev3DcMotorStop") {
         const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
         this.addLine(`m = DcMotor(OUTPUT_${port})`);
         this.addLine(`if m: m.stop()`);
       }
 
       // EV3 Display blocks
-      else if (opcode === "scratchtoev3_ev3ScreenClear") {
+      else if (block.opcode === "scratchtoev3_ev3ScreenClear") {
         this.addLine("display.clear()");
         this.addLine("display.update()");
-      } else if (opcode === "scratchtoev3_ev3ScreenText") {
+      } else if (block.opcode === "scratchtoev3_ev3ScreenText") {
         const text = this.getInputValue(block, "TEXT", blocks);
         const x = this.getInputValue(block, "X", blocks);
         const y = this.getInputValue(block, "Y", blocks);
@@ -4658,7 +4965,7 @@
           "display.text_pixels(str(" + text + "), x=" + x + ", y=" + y + ")",
         );
         this.addLine("display.update()");
-      } else if (opcode === "scratchtoev3_ev3DrawCircle") {
+      } else if (block.opcode === "scratchtoev3_ev3DrawCircle") {
         const x = this.getInputValue(block, "X", blocks);
         const y = this.getInputValue(block, "Y", blocks);
         const r = this.getInputValue(block, "R", blocks);
@@ -4668,7 +4975,7 @@
           `draw.ellipse((${x}-${r}, ${y}-${r}, ${x}+${r}, ${y}+${r}), outline='black')`,
         );
         this.addLine("display.update()");
-      } else if (opcode === "scratchtoev3_ev3DrawRectangle") {
+      } else if (block.opcode === "scratchtoev3_ev3DrawRectangle") {
         const x1 = this.getInputValue(block, "X1", blocks);
         const y1 = this.getInputValue(block, "Y1", blocks);
         const x2 = this.getInputValue(block, "X2", blocks);
@@ -4679,7 +4986,7 @@
           `draw.rectangle((${x1}, ${y1}, ${x2}, ${y2}), outline='black')`,
         );
         this.addLine("display.update()");
-      } else if (opcode === "scratchtoev3_ev3DrawLine") {
+      } else if (block.opcode === "scratchtoev3_ev3DrawLine") {
         const x1 = this.getInputValue(block, "X1", blocks);
         const y1 = this.getInputValue(block, "Y1", blocks);
         const x2 = this.getInputValue(block, "X2", blocks);
@@ -4688,7 +4995,7 @@
         this.addLine("draw = ImageDraw.Draw(display.image)");
         this.addLine(`draw.line((${x1}, ${y1}, ${x2}, ${y2}), fill='black')`);
         this.addLine("display.update()");
-      } else if (opcode === "scratchtoev3_ev3Speak") {
+      } else if (block.opcode === "scratchtoev3_ev3Speak") {
         const text = this.getInputValue(block, "TEXT", blocks);
         // Use German voice if extension language is German
         if (currentLang === "de") {
@@ -4698,13 +5005,13 @@
         } else {
           this.addLine("sound.speak(str(" + text + "))");
         }
-      } else if (opcode === "scratchtoev3_ev3Beep") {
+      } else if (block.opcode === "scratchtoev3_ev3Beep") {
         const freq = this.getInputValue(block, "FREQUENCY", blocks);
         const duration = this.getInputValue(block, "DURATION", blocks);
         this.addLine(
           "sound.play_tone(" + freq + ", " + duration + " / 1000.0)",
         );
-      } else if (opcode === "scratchtoev3_ev3SetLED") {
+      } else if (block.opcode === "scratchtoev3_ev3SetLED") {
         const color = this.getInputValue(block, "COLOR", blocks).replace(
           /"/g,
           "",
@@ -4713,14 +5020,14 @@
         const ev3Color = color === "OFF" ? "BLACK" : color;
         this.addLine('leds.set_color("LEFT", "' + ev3Color + '")');
         this.addLine('leds.set_color("RIGHT", "' + ev3Color + '")');
-      } else if (opcode === "scratchtoev3_ev3ColorIsColor") {
+      } else if (block.opcode === "scratchtoev3_ev3ColorIsColor") {
           const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
           const targetColor = this.getInputValue(block, "COLOR", blocks);
           
           return `(get_sensor("${port}", "color").color == ${targetColor} if get_sensor("${port}", "color") else False)`;
       }
       
-      else if (opcode === "scratchtoev3_ev3SetLEDSide") {
+      else if (block.opcode === "scratchtoev3_ev3SetLEDSide") {
         const side = this.getInputValue(block, "SIDE", blocks).replace(
           /"/g,
           "",
@@ -4731,11 +5038,11 @@
         );
         const ev3Color = color === "OFF" ? "BLACK" : color;
         this.addLine('leds.set_color("' + side + '", "' + ev3Color + '")');
-      } else if (opcode === "scratchtoev3_ev3LEDAllOff") {
+      } else if (block.opcode === "scratchtoev3_ev3LEDAllOff") {
         this.addLine("leds.all_off()");
-      } else if (opcode === "scratchtoev3_ev3LEDReset") {
+      } else if (block.opcode === "scratchtoev3_ev3LEDReset") {
         this.addLine("leds.reset()");
-      } else if (opcode === "scratchtoev3_ev3LEDAnimate") {
+      } else if (block.opcode === "scratchtoev3_ev3LEDAnimate") {
         const animation = this.getInputValue(
           block,
           "ANIMATION",
@@ -4798,26 +5105,26 @@
               ", block=False)",
           );
         }
-      } else if (opcode === "scratchtoev3_ev3SetVolume") {
+      } else if (block.opcode === "scratchtoev3_ev3SetVolume") {
         const volume = this.getInputValue(block, "VOLUME", blocks);
         this.addLine("sound.set_volume(" + volume + ")");
-      } else if (opcode === "scratchtoev3_ev3PlayTone") {
+      } else if (block.opcode === "scratchtoev3_ev3PlayTone") {
         const note = this.getInputValue(block, "NOTE", blocks).replace(
           /"/g,
           "",
         );
         const duration = this.getInputValue(block, "DURATION", blocks);
         this.addLine('sound.play_note("' + note + '", ' + duration + ")");
-      } else if (opcode === "scratchtoev3_ev3PlaySong") {
+      } else if (block.opcode === "scratchtoev3_ev3PlaySong") {
         const song = this.getInputValue(block, "SONG", blocks);
         const tempo = this.getInputValue(block, "TEMPO", blocks);
         this.addLine(
           "sound.play_song(json.loads(" + song + "), tempo=" + tempo + ")",
         );
-      } else if (opcode === "scratchtoev3_ev3PlayToneSequence") {
+      } else if (block.opcode === "scratchtoev3_ev3PlayToneSequence") {
         const sequence = this.getInputValue(block, "SEQUENCE", blocks);
         this.addLine("sound.tone(json.loads(" + sequence + "))");
-      } else if (opcode === "scratchtoev3_ev3PlayFile") {
+      } else if (block.opcode === "scratchtoev3_ev3PlayFile") {
         const filename = this.getInputValue(block, "FILENAME", blocks);
         const volume = this.getInputValue(block, "VOLUME", blocks);
         this.addLine(
@@ -4827,24 +5134,24 @@
             volume +
             ")",
         );
-      } else if (opcode === "scratchtoev3_ev3LEDStopAnimation") {
+      } else if (block.opcode === "scratchtoev3_ev3LEDStopAnimation") {
         this.addLine("leds.animate_stop()");
       }
 
       // Sprite state blocks
-      else if (opcode === "scratchtoev3_spriteSetPosition") {
+      else if (block.opcode === "scratchtoev3_spriteSetPosition") {
         const sprite = this.getInputValue(block, "SPRITE", blocks);
         const x = this.getInputValue(block, "X", blocks);
         const y = this.getInputValue(block, "Y", blocks);
         this.addLine("state = get_sprite_state(" + sprite + ")");
         this.addLine('state["x"] = ' + x);
         this.addLine('state["y"] = ' + y);
-      } else if (opcode === "scratchtoev3_spriteSetSize") {
+      } else if (block.opcode === "scratchtoev3_spriteSetSize") {
         const sprite = this.getInputValue(block, "SPRITE", blocks);
         const size = this.getInputValue(block, "SIZE", blocks);
         this.addLine("state = get_sprite_state(" + sprite + ")");
         this.addLine('state["size"] = ' + size);
-      } else if (opcode === "scratchtoev3_spriteSetVisible") {
+      } else if (block.opcode === "scratchtoev3_spriteSetVisible") {
         const sprite = this.getInputValue(block, "SPRITE", blocks);
         const visible = this.getInputValue(block, "VISIBLE", blocks);
         this.addLine("state = get_sprite_state(" + sprite + ")");
@@ -4990,6 +5297,15 @@
         } else {
           this.addLine("pass");
         }
+        // Yield so concurrent threads (other hats, broadcasts) get a slice and
+        // stop_all can take effect promptly. Mirrors control_forever.
+        this.addLine("sleep(0.01)");
+        this.indentLevel--;
+      } else if (opcode === "control_wait_until") {
+        const condition = this.getInputValue(block, "CONDITION", blocks);
+        this.addLine("while not (" + condition + ") and not stop_all:");
+        this.indentLevel++;
+        this.addLine("sleep(0.01)");
         this.indentLevel--;
       } else if (opcode === "control_stop") {
         const stopOption = this.getFieldValue(block, "STOP_OPTION") || "all";
@@ -5058,6 +5374,62 @@
             value +
             ")",
         );
+      } else if (opcode === "data_showvariable" || opcode === "data_hidevariable" ||
+                 opcode === "data_showlist" || opcode === "data_hidelist") {
+        // No on-brick stage — these are no-ops, but recognize them so the
+        // generic "TODO" branch doesn't kick in.
+        this.addLine("# " + opcode + " (no-op on EV3 — no stage)");
+      }
+
+      // List blocks
+      else if (opcode === "data_addtolist") {
+        const listName = this.getFieldValue(block, "LIST");
+        const item = this.getInputValue(block, "ITEM", blocks);
+        this.addLine(
+          'lists.setdefault("' + listName + '", []).append(' + item + ")",
+        );
+      } else if (opcode === "data_deleteoflist") {
+        const listName = this.getFieldValue(block, "LIST");
+        const idx = this.getInputValue(block, "INDEX", blocks);
+        this.addLine('_list_delete("' + listName + '", ' + idx + ")");
+      } else if (opcode === "data_deletealloflist") {
+        const listName = this.getFieldValue(block, "LIST");
+        this.addLine('lists["' + listName + '"] = []');
+      } else if (opcode === "data_insertatlist") {
+        const listName = this.getFieldValue(block, "LIST");
+        const idx = this.getInputValue(block, "INDEX", blocks);
+        const item = this.getInputValue(block, "ITEM", blocks);
+        this.addLine(
+          '_list_insert("' + listName + '", ' + idx + ", " + item + ")",
+        );
+      } else if (opcode === "data_replaceitemoflist") {
+        const listName = this.getFieldValue(block, "LIST");
+        const idx = this.getInputValue(block, "INDEX", blocks);
+        const item = this.getInputValue(block, "ITEM", blocks);
+        this.addLine(
+          '_list_replace("' + listName + '", ' + idx + ", " + item + ")",
+        );
+      }
+
+      // Procedure call (custom block invocation)
+      else if (opcode === "procedures_call") {
+        const info = this.parseProcMutation(block);
+        const proc = info && this.procedures[info.proccode];
+        if (!proc) {
+          // Defined-elsewhere proc that we never picked up, or malformed.
+          this.addLine(
+            "# UNRESOLVED custom block call: " +
+              (info ? info.proccode : "(no mutation)"),
+          );
+        } else {
+          const args = proc.argIds.map((id) => {
+            // The call's inputs are keyed by argumentid. Use getInputValue
+            // by faking the input name — getInputValue looks up `block.inputs[name]`.
+            const v = this.getInputValue(block, id, blocks);
+            return v == null ? "0" : v;
+          });
+          this.addLine(proc.funcName + "(" + args.join(", ") + ")");
+        }
       }
 
       // Default
@@ -5194,6 +5566,34 @@
         const varName = this.getFieldValue(block, "VARIABLE");
         return 'variables.get("' + varName + '", 0)';
       }
+      // Custom-block argument reporters
+      else if (
+        block.opcode === "argument_reporter_string_number" ||
+        block.opcode === "argument_reporter_boolean"
+      ) {
+        const argName = this.getFieldValue(block, "VALUE") || "";
+        return "arg_" + this.sanitizeName(argName);
+      }
+      // Lists (reporters)
+      else if (block.opcode === "data_itemoflist") {
+        const listName = this.getFieldValue(block, "LIST");
+        const idx = this.getInputValue(block, "INDEX", blocks);
+        return '_list_item("' + listName + '", ' + idx + ")";
+      } else if (block.opcode === "data_itemnumoflist") {
+        const listName = this.getFieldValue(block, "LIST");
+        const item = this.getInputValue(block, "ITEM", blocks);
+        return '_list_itemnum("' + listName + '", ' + item + ")";
+      } else if (block.opcode === "data_lengthoflist") {
+        const listName = this.getFieldValue(block, "LIST");
+        return '_list_length("' + listName + '")';
+      } else if (block.opcode === "data_listcontainsitem") {
+        const listName = this.getFieldValue(block, "LIST");
+        const item = this.getInputValue(block, "ITEM", blocks);
+        return '_list_contains("' + listName + '", ' + item + ")";
+      } else if (block.opcode === "data_listcontents") {
+        const listName = this.getFieldValue(block, "LIST");
+        return '_list_contents(lists.setdefault("' + listName + '", []))';
+      }
       // Sprite state reporters
       else if (block.opcode === "scratchtoev3_spriteGetX") {
         const sprite = this.getInputValue(block, "SPRITE", blocks);
@@ -5221,7 +5621,7 @@
           port +
           '", "touch") else False)'
         );
-      } else if (opcode === "scratchtoev3_ev3ConfigurePort") {
+      } else if (block.opcode === "scratchtoev3_ev3ConfigurePort") {
         const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
         const device = this.getInputValue(block, "DEVICE", blocks);
         
@@ -5238,7 +5638,7 @@
         this.addLine(`time.sleep(0.5)`); // Wait for driver load
       }
       
-      else if (opcode === "scratchtoev3_ev3ColorRGB") {
+      else if (block.opcode === "scratchtoev3_ev3ColorRGB") {
           const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
           const comp = this.getInputValue(block, "COMPONENT", blocks).replace(/"/g, "");
           
@@ -5276,26 +5676,6 @@
           port +
           '", "color") else 0)'
         );
-      } else if (block.opcode === "scratchtoev3_ev3ColorRGB") {
-        const port = this.getInputValue(block, "PORT", blocks).replace(
-          /"/g,
-          "",
-        );
-        const component = this.getInputValue(
-          block,
-          "COMPONENT",
-          blocks,
-        ).replace(/"/g, "");
-        const idx = { red: 0, green: 1, blue: 2 }[component] || 0;
-        return (
-          '(get_sensor("' +
-          port +
-          '", "color").rgb[' +
-          idx +
-          '] if get_sensor("' +
-          port +
-          '", "color") else 0)'
-        );
       } else if (block.opcode === "scratchtoev3_ev3UltrasonicSensor") {
         const port = this.getInputValue(block, "PORT", blocks).replace(
           /"/g,
@@ -5308,7 +5688,7 @@
           port +
           '", "ultrasonic") else 0)'
         );
-      } else if (opcode === "scratchtoev3_ev3UltrasonicPresence") {
+      } else if (block.opcode === "scratchtoev3_ev3UltrasonicPresence") {
           const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
           return `(get_sensor("${port}", "ultrasonic").other_sensor_present if get_sensor("${port}", "ultrasonic") else False)`;
       }
@@ -5333,7 +5713,7 @@
           port +
           '", "gyro") else 0)'
         );
-      } else if (opcode === "scratchtoev3_ev3GyroReset") {
+      } else if (block.opcode === "scratchtoev3_ev3GyroReset") {
           const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
           this.addLine(`s = get_sensor("${port}", "gyro")`);
           this.addLine(`if s: s.reset()`); 
@@ -5438,11 +5818,11 @@
           port +
           '") else 0)'
         );
-      } else if (opcode === "scratchtoev3_ev3MotorIsRunning") {
+      } else if (block.opcode === "scratchtoev3_ev3MotorIsRunning") {
           const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
           return `("running" in get_motor("${port}").state if get_motor("${port}") else False)`;
       }
-      else if (opcode === "scratchtoev3_ev3MotorIsStalled") {
+      else if (block.opcode === "scratchtoev3_ev3MotorIsStalled") {
           const port = this.getInputValue(block, "PORT", blocks).replace(/"/g, "");
           return `("stalled" in get_motor("${port}").state if get_motor("${port}") else False)`;
       }
@@ -5503,6 +5883,57 @@
         const s1 = this.getInputValue(block, "STRING1", blocks);
         const s2 = this.getInputValue(block, "STRING2", blocks);
         return "str(" + s1 + ") + str(" + s2 + ")";
+      } else if (block.opcode === "operator_mod") {
+        const num1 = this.getInputValue(block, "NUM1", blocks);
+        const num2 = this.getInputValue(block, "NUM2", blocks);
+        // Scratch mod is non-negative even for negative dividends — Python's
+        // `%` already has that semantics for numeric operands.
+        return "(" + num1 + " % " + num2 + ")";
+      } else if (block.opcode === "operator_round") {
+        const num = this.getInputValue(block, "NUM", blocks);
+        // Scratch rounds half-away-from-zero; Python's round() is banker's
+        // rounding. Emit a half-away-from-zero equivalent.
+        return "int(math.floor(float(" + num + ") + 0.5))";
+      } else if (block.opcode === "operator_letter_of") {
+        const idx = this.getInputValue(block, "LETTER", blocks);
+        const str = this.getInputValue(block, "STRING", blocks);
+        // Scratch is 1-indexed; out-of-range returns "".
+        return (
+          "(str(" + str + ")[int(" + idx + ") - 1]" +
+          " if 1 <= int(" + idx + ") <= len(str(" + str + "))" +
+          ' else "")'
+        );
+      } else if (block.opcode === "operator_length") {
+        const str = this.getInputValue(block, "STRING", blocks);
+        return "len(str(" + str + "))";
+      } else if (block.opcode === "operator_contains") {
+        const haystack = this.getInputValue(block, "STRING1", blocks);
+        const needle = this.getInputValue(block, "STRING2", blocks);
+        // Scratch's contains is case-insensitive.
+        return (
+          "(str(" + needle + ").lower() in str(" + haystack + ").lower())"
+        );
+      } else if (block.opcode === "operator_mathop") {
+        const op = this.getFieldValue(block, "OPERATOR");
+        const num = this.getInputValue(block, "NUM", blocks);
+        // Scratch trig uses degrees. log/ln are base-10/base-e respectively.
+        const mathopMap = {
+          abs: "abs(float(" + num + "))",
+          floor: "math.floor(float(" + num + "))",
+          ceiling: "math.ceil(float(" + num + "))",
+          sqrt: "math.sqrt(float(" + num + "))",
+          sin: "math.sin(math.radians(float(" + num + ")))",
+          cos: "math.cos(math.radians(float(" + num + ")))",
+          tan: "math.tan(math.radians(float(" + num + ")))",
+          asin: "math.degrees(math.asin(float(" + num + ")))",
+          acos: "math.degrees(math.acos(float(" + num + ")))",
+          atan: "math.degrees(math.atan(float(" + num + ")))",
+          ln: "math.log(float(" + num + "))",
+          log: "math.log10(float(" + num + "))",
+          "e ^": "math.exp(float(" + num + "))",
+          "10 ^": "(10 ** float(" + num + "))",
+        };
+        return mathopMap[op] || ("float(" + num + ")");
       }
 
       return "0";

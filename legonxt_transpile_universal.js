@@ -1,5 +1,5 @@
 // Name: LEGO NXT Universal
-// ID: CrispStrobe/legonxt_transpile_universal
+// ID: legonxt
 // Description: Universal connection (BTC, Scratch Link, Bridge). Supports both Live Streaming and NXC Compilation.
 // By: CrispStrobe <https://github.com/CrispStrobe>
 // License: MPL-2.0
@@ -889,10 +889,12 @@ if (typeof window !== "undefined") {
 
       if (messageType === NXT_OPCODE.REPLY) {
         const status = telegram[2];
-        for (const [id, resolve] of this.pendingRequests.entries()) {
+        // Resolve and remove the oldest pending request.
+        const first = this.pendingRequests.entries().next().value;
+        if (first) {
+          const [id, resolve] = first;
           resolve(telegram);
           this.pendingRequests.delete(id);
-          break;
         }
       }
     }
@@ -939,10 +941,6 @@ if (typeof window !== "undefined") {
       }
 
       return null;
-    }
-
-    sleep(ms) {
-        return new Promise((resolve) => setTimeout(resolve, ms));
     }
   }
 
@@ -2775,6 +2773,10 @@ if (typeof window !== "undefined") {
         }
         this.decreaseIndent();
         this.addLine(`}`);
+      } else if (opcode === "control_wait_until") {
+        const condition = this.getInputValue(block, "CONDITION", blocks);
+        // 10 ms tick keeps the NXT VM responsive and lets sensors update.
+        this.addLine(`while(!(${condition})) { Wait(10); }`);
       } else if (opcode === "control_stop") {
         const stopOption = this.getFieldValue(block, "STOP_OPTION") || "all";
         if (stopOption === "all") {
@@ -4127,11 +4129,12 @@ this.addLine("}");
           `Reply status: 0x${status.toString(16)} (${NXT_ERROR[status] || "Unknown"})`,
         );
 
-        // Resolve pending requests
-        for (const [id, resolve] of this.pendingRequests.entries()) {
+        // Resolve and remove the oldest pending request.
+        const first = this.pendingRequests.entries().next().value;
+        if (first) {
+          const [id, resolve] = first;
           resolve(telegram);
           this.pendingRequests.delete(id);
-          break;
         }
       }
     }
@@ -6048,9 +6051,6 @@ this.addLine("}");
 }
 
     // ==================== CONNECTION ====================
-    connect() {
-      return this.peripheral.scan();
-    }
     disconnect() {
       return this.peripheral.disconnect();
     }
