@@ -1,0 +1,21 @@
+{
+  "ext_id_prefix": "csp",
+  "strings": {
+    "name":         { "en": "CSP Solver", "de": "CSP-Löser", "fr": "Solveur CSP" },
+    "clear":        { "en": "clear CSP problem", "de": "CSP-Problem zurücksetzen", "fr": "effacer le problème CSP" },
+    "addVariable":  { "en": "add variable [NAME] with domain [DOMAIN]", "de": "Variable [NAME] mit Domäne [DOMAIN] hinzufügen", "fr": "ajouter variable [NAME] avec domaine [DOMAIN]" },
+    "addConstraint":{ "en": "add constraint [VAR1] != [VAR2]", "de": "Bedingung [VAR1] != [VAR2] hinzufügen", "fr": "ajouter contrainte [VAR1] != [VAR2]" },
+    "solve":        { "en": "solve CSP", "de": "CSP lösen", "fr": "résoudre le CSP" },
+    "getVarValue":  { "en": "solution value of [VAR]", "de": "Lösungswert von [VAR]", "fr": "valeur solution de [VAR]" },
+    "solveSudoku":  { "en": "solve sudoku [PUZZLE]", "de": "Sudoku [PUZZLE] lösen", "fr": "résoudre sudoku [PUZZLE]" }
+  },
+  "rewrites": [
+    { "old": "name: \"CSP Solver\",", "key": "name", "field": "name" },
+    { "old": "text: \"clear CSP problem\",", "key": "clear" },
+    { "old": "text: \"add variable [NAME] with domain [DOMAIN]\",", "key": "addVariable" },
+    { "old": "text: \"add constraint [VAR1] != [VAR2]\",", "key": "addConstraint" },
+    { "old": "text: \"solve CSP\",", "key": "solve" },
+    { "old": "text: \"solution value of [VAR]\",", "key": "getVarValue" },
+    { "old": "text: \"solve sudoku [PUZZLE]\",", "key": "solveSudoku" }
+  ]
+}

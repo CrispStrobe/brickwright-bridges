@@ -1,0 +1,39 @@
+{
+  "ext_id_prefix": "legospike_ble",
+  "strings": {
+    "name":         { "en": "SPIKE Prime", "de": "SPIKE Prime", "fr": "SPIKE Prime" },
+    "connect":      { "en": "connect to SPIKE Prime", "de": "mit SPIKE Prime verbinden", "fr": "se connecter au SPIKE Prime" },
+    "disconnect":   { "en": "disconnect", "de": "trennen", "fr": "déconnecter" },
+    "connected":    { "en": "connected?", "de": "verbunden?", "fr": "connecté ?" },
+    "startMotor":   { "en": "start motor [PORT] at [SPEED]%", "de": "Motor [PORT] mit [SPEED]% starten", "fr": "démarrer moteur [PORT] à [SPEED]%" },
+    "stopMotor":    { "en": "stop motor [PORT] with [ACTION]", "de": "Motor [PORT] stoppen mit [ACTION]", "fr": "arrêter moteur [PORT] avec [ACTION]" },
+    "motorPosition":{ "en": "motor [PORT] position", "de": "Position von Motor [PORT]", "fr": "position du moteur [PORT]" },
+    "lightPixel":   { "en": "set 3x3 light [PORT] pixel x:[X] y:[Y] brightness [BRIGHTNESS]%", "de": "3x3-Licht [PORT] Pixel x:[X] y:[Y] Helligkeit [BRIGHTNESS]% setzen", "fr": "définir matrice 3x3 [PORT] pixel x:[X] y:[Y] luminosité [BRIGHTNESS]%" },
+    "distanceMm":   { "en": "distance sensor [PORT] (mm)", "de": "Abstandssensor [PORT] (mm)", "fr": "capteur de distance [PORT] (mm)" },
+    "forcePressed": { "en": "force sensor [PORT] pressed?", "de": "Kraftsensor [PORT] gedrückt?", "fr": "capteur de force [PORT] pressé ?" },
+    "forceValue":   { "en": "force sensor [PORT] value (%)", "de": "Kraftsensor [PORT] Wert (%)", "fr": "valeur du capteur de force [PORT] (%)" },
+    "colorSensor":  { "en": "color sensor [PORT] color", "de": "Farbsensor [PORT] Farbe", "fr": "couleur du capteur [PORT]" },
+    "orientation":  { "en": "hub orientation [AXIS]", "de": "Hub-Ausrichtung [AXIS]", "fr": "orientation du hub [AXIS]" },
+    "acceleration": { "en": "hub acceleration [AXIS]", "de": "Hub-Beschleunigung [AXIS]", "fr": "accélération du hub [AXIS]" },
+    "faceUp":       { "en": "hub face up", "de": "Hub liegt mit Display nach oben", "fr": "hub face en haut" },
+    "battery":      { "en": "battery level", "de": "Batteriestand", "fr": "niveau de batterie" }
+  },
+  "rewrites": [
+    { "old": "name: \"SPIKE Prime\",", "key": "name", "field": "name" },
+    { "old": "text: \"connect to SPIKE Prime\",", "key": "connect" },
+    { "old": "text: \"disconnect\",", "key": "disconnect" },
+    { "old": "text: \"connected?\",", "key": "connected" },
+    { "old": "text: \"start motor [PORT] at [SPEED]%\",", "key": "startMotor" },
+    { "old": "text: \"stop motor [PORT] with [ACTION]\",", "key": "stopMotor" },
+    { "old": "text: \"motor [PORT] position\",", "key": "motorPosition" },
+    { "old": "text: \"set 3x3 light [PORT] pixel x:[X] y:[Y] brightness [BRIGHTNESS]%\",", "key": "lightPixel" },
+    { "old": "text: \"distance sensor [PORT] (mm)\",", "key": "distanceMm" },
+    { "old": "text: \"force sensor [PORT] pressed?\",", "key": "forcePressed" },
+    { "old": "text: \"force sensor [PORT] value (%)\",", "key": "forceValue" },
+    { "old": "text: \"color sensor [PORT] color\",", "key": "colorSensor" },
+    { "old": "text: \"hub orientation [AXIS]\",", "key": "orientation" },
+    { "old": "text: \"hub acceleration [AXIS]\",", "key": "acceleration" },
+    { "old": "text: \"hub face up\",", "key": "faceUp" },
+    { "old": "text: \"battery level\",", "key": "battery" }
+  ]
+}
