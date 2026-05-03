@@ -244,7 +244,9 @@ class ScriptManager:
                     log("Added shebang to", script_path)
 
             # Make executable
-            os.chmod(script_path, 0o755)  # nosec B103 — intentional: script must be exec'able on the brick
+            os.chmod(
+                script_path, 0o755
+            )  # nosec B103 — intentional: script must be exec'able on the brick
 
         except Exception as e:
             vlog("Could not make script executable", str(e))
@@ -1030,7 +1032,9 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                     f.write(code)
 
                 # Make executable
-                os.chmod(filepath, 0o755)  # nosec B103 — intentional: uploaded helper must be executable
+                os.chmod(
+                    filepath, 0o755
+                )  # nosec B103 — intentional: uploaded helper must be executable
 
                 log("Script uploaded", filename)
 

@@ -171,7 +171,9 @@ class DependencyManager:
         if platform.system() == "Darwin":
             try:
                 import objc  # noqa: F401 — availability probe
-                from IOBluetooth import IOBluetoothDeviceInquiry  # noqa: F401 — availability probe
+                from IOBluetooth import (
+                    IOBluetoothDeviceInquiry,
+                )  # noqa: F401 — availability probe
 
                 self._logger.info("  ✅ PyObjC - Native macOS Bluetooth enabled")
             except ImportError:
