@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  python:
+    name: Python audit (ruff / black / bandit)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install audit tools
+        run: pip install ruff==0.15.7 black==25.9.0 bandit==1.9.4
+
+      - name: ruff check
+        run: ruff check .
+
+      - name: black --check
+        run: black --check .
+
+      - name: bandit
+        run: bandit -r *.py ev3-compiler-service/ -c pyproject.toml
+
+      - name: py_compile smoke check
+        run: |
+          set -e
+          for f in *.py ev3-compiler-service/*.py; do
+            python -m py_compile "$f"
+          done
