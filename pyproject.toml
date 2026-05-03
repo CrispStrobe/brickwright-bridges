@@ -1,0 +1,29 @@
+[tool.ruff]
+extend-exclude = ["bkp"]
+target-version = "py38"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = [
+    "E501",  # line too long — defer to formatter / not always avoidable
+    "E741",  # ambiguous variable name (l, I, O) — pre-existing
+    "B008",  # function call in argument default — pre-existing pattern
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.bandit]
+exclude_dirs = ["bkp", "ev3-compiler-service/lmsasm-binary"]
+# Skip tests that are consistently false-positives for a Bluetooth-bridge tool:
+#   B104 — bridges intentionally bind 0.0.0.0 so the editor on the LAN can reach
+#          them; we are NOT a server exposed to the public internet.
+#   B110 / B112 — defensive try/except/pass in network/IO code is intentional
+#                 (we can't crash on a transient disconnect).
+#   B404 / B603 / B607 — subprocess usage in diagnostic helpers (nxt-diag.py,
+#                        reset_nxt.sh, etc.) is the whole point of those tools.
+#   B108 — hardcoded /tmp paths used for diagnostic logs only; symlink risk is
+#          negligible on the dev machines this runs on.
+skips = ["B104", "B108", "B110", "B112", "B404", "B603", "B607"]

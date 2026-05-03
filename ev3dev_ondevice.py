@@ -1,60 +1,57 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 """
 ev3_ondevice_bridge.py
 EV3 Bridge Server v2.3 with Integrated Script Manager
 """
 
+import argparse
+import base64
 import http.server
-import socketserver
 import json
 import os
+import queue  # noqa: F401 — availability probe
+import signal
+import socketserver
+import ssl
+import subprocess
 import sys
 import threading
-import subprocess
 import time
-import base64
-import argparse
 import traceback
-import signal
-import queue
 from datetime import datetime
-import ssl
-from pathlib import Path
+from pathlib import Path  # noqa: F401 — availability probe
+
+from ev3dev2.button import Button
+from ev3dev2.display import Display
+from ev3dev2.led import Leds
 
 # EV3 imports
 from ev3dev2.motor import (
-    Motor,
-    LargeMotor,
-    MediumMotor,
     OUTPUT_A,
     OUTPUT_B,
     OUTPUT_C,
     OUTPUT_D,
-    SpeedPercent,
-    ServoMotor,
     DcMotor,
-    MoveTank,
+    MediumMotor,
+    Motor,
     MoveSteering,
+    ServoMotor,
+    SpeedPercent,
 )
-from ev3dev2.sensor import INPUT_1, INPUT_2, INPUT_3, INPUT_4
 from ev3dev2.port import LegoPort
+from ev3dev2.power import PowerSupply
+from ev3dev2.sensor import INPUT_1, INPUT_2, INPUT_3, INPUT_4
 from ev3dev2.sensor.lego import (
-    TouchSensor,
     ColorSensor,
-    UltrasonicSensor,
     GyroSensor,
     InfraredSensor,
-    SoundSensor,
     LightSensor,
+    SoundSensor,
+    TouchSensor,
+    UltrasonicSensor,
 )
 from ev3dev2.sound import Sound
-from ev3dev2.display import Display
-from ev3dev2.button import Button
-from ev3dev2.led import Leds
-from ev3dev2.power import PowerSupply
-
 
 # ============================================================================
 # CONFIGURATION
@@ -92,13 +89,13 @@ leds = Leds()
 power = PowerSupply()
 
 # === Motor Configuration Memory ===
-# Stores ramping (smoothing) settings for each port. 
+# Stores ramping (smoothing) settings for each port.
 # Default is 250ms (Smooth). 0ms would be sharp/instant.
 motor_config = {
-    'A': {'up': 250, 'down': 250},
-    'B': {'up': 250, 'down': 250},
-    'C': {'up': 250, 'down': 250},
-    'D': {'up': 250, 'down': 250},
+    "A": {"up": 250, "down": 250},
+    "B": {"up": 250, "down": 250},
+    "C": {"up": 250, "down": 250},
+    "D": {"up": 250, "down": 250},
 }
 
 # Script management
@@ -126,10 +123,10 @@ def signal_handler(sig, frame):
     print("\nStopping all scripts...")
 
     # Stop all running scripts
-    for script_id, script_info in list(running_scripts.items()):
+    for _script_id, script_info in list(running_scripts.items()):
         try:
             script_info["process"].terminate()
-        except:
+        except Exception:
             pass
 
     # Stop all motors
@@ -138,9 +135,9 @@ def signal_handler(sig, frame):
             if motor:
                 try:
                     motor.stop()
-                except:
+                except Exception:
                     pass
-    except:
+    except Exception:
         pass
 
     print("Shutdown complete")
@@ -161,18 +158,18 @@ def vlog(message, data=None):
     if VERBOSE:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
         if data:
-            print("[{0}] [BRIDGE] {1}: {2}".format(timestamp, message, data))
+            print(f"[{timestamp}] [BRIDGE] {message}: {data}")
         else:
-            print("[{0}] [BRIDGE] {1}".format(timestamp, message))
+            print(f"[{timestamp}] [BRIDGE] {message}")
 
 
 def log(message, data=None):
     """Standard logging"""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     if data:
-        print("[{0}] {1}: {2}".format(timestamp, message, data))
+        print(f"[{timestamp}] {message}: {data}")
     else:
-        print("[{0}] {1}".format(timestamp, message))
+        print(f"[{timestamp}] {message}")
 
 
 # ============================================================================
@@ -237,7 +234,7 @@ class ScriptManager:
         """Ensure script has proper shebang and is executable"""
         try:
             # Check if file has shebang
-            with open(script_path, "r") as f:
+            with open(script_path) as f:
                 first_line = f.readline()
                 if not first_line.startswith("#!"):
                     # Add shebang at the beginning
@@ -247,7 +244,7 @@ class ScriptManager:
                     log("Added shebang to", script_path)
 
             # Make executable
-            os.chmod(script_path, 0o755)
+            os.chmod(script_path, 0o755)  # nosec B103 — intentional: script must be exec'able on the brick
 
         except Exception as e:
             vlog("Could not make script executable", str(e))
@@ -259,8 +256,16 @@ class ScriptManager:
         script_path = os.path.join(self.scripts_dir, script_name)
 
         # SECURITY: Validate filename to prevent path traversal
-        if not script_name.endswith('.py') or '/' in script_name or '..' in script_name or '\\' in script_name:
-            log("Invalid script name", {"name": script_name, "reason": "path_traversal_attempt"})
+        if (
+            not script_name.endswith(".py")
+            or "/" in script_name
+            or ".." in script_name
+            or "\\" in script_name
+        ):
+            log(
+                "Invalid script name",
+                {"name": script_name, "reason": "path_traversal_attempt"},
+            )
             return None
 
         if not os.path.exists(script_path):
@@ -273,17 +278,16 @@ class ScriptManager:
                 script_id = script_counter
                 script_counter += 1
 
-            log("Starting script", {
-                "name": script_name,
-                "id": script_id,
-                "path": script_path
-            })
+            log(
+                "Starting script",
+                {"name": script_name, "id": script_id, "path": script_path},
+            )
 
             # Create log file in /tmp
-            log_file = "/tmp/ev3_script_{0}.log".format(script_id)
+            log_file = f"/tmp/ev3_script_{script_id}.log"
 
             # Open log file
-            log_fd = open(log_file, 'w', buffering=1)  # Line buffered
+            log_fd = open(log_file, "w", buffering=1)  # Line buffered
 
             # Start process
             proc = subprocess.Popen(
@@ -304,12 +308,15 @@ class ScriptManager:
                     "log_fd": log_fd,
                 }
 
-            log("Script started successfully", {
-                "name": script_name,
-                "id": script_id,
-                "pid": proc.pid,
-                "log_file": log_file
-            })
+            log(
+                "Script started successfully",
+                {
+                    "name": script_name,
+                    "id": script_id,
+                    "pid": proc.pid,
+                    "log_file": log_file,
+                },
+            )
 
             # Play start sound
             try:
@@ -320,11 +327,10 @@ class ScriptManager:
             return script_id
 
         except Exception as e:
-            log("Script start failed", {
-                "name": script_name,
-                "error": str(e),
-                "type": type(e).__name__
-            })
+            log(
+                "Script start failed",
+                {"name": script_name, "error": str(e), "type": type(e).__name__},
+            )
             if VERBOSE:
                 traceback.print_exc()
             return None
@@ -332,37 +338,38 @@ class ScriptManager:
     def stop_script(self, script_id):
         """
         Stop a running script with comprehensive error handling and logging.
-        
+
         Thread-safe, idempotent, handles edge cases.
-        
+
         Args:
             script_id: Integer ID of script to stop
-            
+
         Returns:
             bool: True if stopped successfully, False if script not found
         """
         import time
+
         global script_lock, running_scripts
-        
+
         start_time = time.time()
-        
+
         # Phase 1: Validate and extract script info (thread-safe)
-        log("Stop script requested", {
-            "script_id": script_id,
-            "timestamp": start_time
-        })
-        
+        log("Stop script requested", {"script_id": script_id, "timestamp": start_time})
+
         with script_lock:
             if script_id not in running_scripts:
-                log("Script not running (already stopped or never existed)", {
-                    "script_id": script_id,
-                    "known_scripts": list(running_scripts.keys())
-                })
+                log(
+                    "Script not running (already stopped or never existed)",
+                    {
+                        "script_id": script_id,
+                        "known_scripts": list(running_scripts.keys()),
+                    },
+                )
                 return False
-            
+
             # Make a copy of script info (don't hold lock during slow operations)
             script_info = running_scripts[script_id].copy()
-        
+
         # Extract info for clarity
         process = script_info["process"]
         log_fd = script_info.get("log_fd")
@@ -370,278 +377,311 @@ class ScriptManager:
         script_name = script_info["name"]
         start_timestamp = script_info["started"]
         runtime = time.time() - start_timestamp
-        
-        log("Script info retrieved", {
-            "script_id": script_id,
-            "name": script_name,
-            "pid": process.pid if process else "N/A",
-            "runtime_seconds": round(runtime, 2),
-            "log_file": log_file
-        })
-        
+
+        log(
+            "Script info retrieved",
+            {
+                "script_id": script_id,
+                "name": script_name,
+                "pid": process.pid if process else "N/A",
+                "runtime_seconds": round(runtime, 2),
+                "log_file": log_file,
+            },
+        )
+
         # Phase 2: Check if process is already dead
         try:
             poll_result = process.poll()
             if poll_result is not None:
-                log("Process already terminated", {
-                    "script_id": script_id,
-                    "pid": process.pid,
-                    "exit_code": poll_result,
-                    "runtime": round(runtime, 2)
-                })
+                log(
+                    "Process already terminated",
+                    {
+                        "script_id": script_id,
+                        "pid": process.pid,
+                        "exit_code": poll_result,
+                        "runtime": round(runtime, 2),
+                    },
+                )
                 # Skip termination, go straight to cleanup
                 process_stopped = True
             else:
                 process_stopped = False
-                log("Process is running, will terminate", {
-                    "script_id": script_id,
-                    "pid": process.pid
-                })
+                log(
+                    "Process is running, will terminate",
+                    {"script_id": script_id, "pid": process.pid},
+                )
         except Exception as e:
-            log("Error checking process status", {
-                "script_id": script_id,
-                "error": str(e),
-                "error_type": type(e).__name__
-            })
+            log(
+                "Error checking process status",
+                {
+                    "script_id": script_id,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                },
+            )
             process_stopped = False
-        
+
         # Phase 3: Graceful termination (SIGTERM)
         if not process_stopped:
             try:
-                log("Sending SIGTERM", {
-                    "script_id": script_id,
-                    "pid": process.pid
-                })
-                
+                log("Sending SIGTERM", {"script_id": script_id, "pid": process.pid})
+
                 process.terminate()
-                
-                log("SIGTERM sent, waiting up to 2 seconds", {
-                    "script_id": script_id,
-                    "pid": process.pid
-                })
-                
+
+                log(
+                    "SIGTERM sent, waiting up to 2 seconds",
+                    {"script_id": script_id, "pid": process.pid},
+                )
+
                 try:
                     exit_code = process.wait(timeout=2.0)
-                    log("Process terminated gracefully", {
-                        "script_id": script_id,
-                        "pid": process.pid,
-                        "exit_code": exit_code,
-                        "method": "SIGTERM",
-                        "wait_time": round(time.time() - start_time, 2)
-                    })
+                    log(
+                        "Process terminated gracefully",
+                        {
+                            "script_id": script_id,
+                            "pid": process.pid,
+                            "exit_code": exit_code,
+                            "method": "SIGTERM",
+                            "wait_time": round(time.time() - start_time, 2),
+                        },
+                    )
                     process_stopped = True
-                    
+
                 except subprocess.TimeoutExpired:
-                    log("Process did not respond to SIGTERM within 2 seconds", {
-                        "script_id": script_id,
-                        "pid": process.pid,
-                        "timeout_seconds": 2
-                    })
+                    log(
+                        "Process did not respond to SIGTERM within 2 seconds",
+                        {
+                            "script_id": script_id,
+                            "pid": process.pid,
+                            "timeout_seconds": 2,
+                        },
+                    )
                     process_stopped = False
-                    
+
             except OSError as e:
                 # Process might have died between poll() and terminate()
                 if e.errno == 3:  # ESRCH - No such process
-                    log("Process disappeared before SIGTERM (race condition)", {
-                        "script_id": script_id,
-                        "pid": process.pid,
-                        "errno": e.errno
-                    })
+                    log(
+                        "Process disappeared before SIGTERM (race condition)",
+                        {"script_id": script_id, "pid": process.pid, "errno": e.errno},
+                    )
                     process_stopped = True
                 else:
-                    log("OSError during SIGTERM", {
+                    log(
+                        "OSError during SIGTERM",
+                        {"script_id": script_id, "error": str(e), "errno": e.errno},
+                    )
+
+            except Exception as e:
+                log(
+                    "Unexpected error during SIGTERM",
+                    {
                         "script_id": script_id,
                         "error": str(e),
-                        "errno": e.errno
-                    })
-                    
-            except Exception as e:
-                log("Unexpected error during SIGTERM", {
-                    "script_id": script_id,
-                    "error": str(e),
-                    "error_type": type(e).__name__,
-                    "traceback": traceback.format_exc() if VERBOSE else None
-                })
-        
+                        "error_type": type(e).__name__,
+                        "traceback": traceback.format_exc() if VERBOSE else None,
+                    },
+                )
+
         # Phase 4: Force kill if still alive (SIGKILL)
         if not process_stopped:
             try:
-                log("Force killing process with SIGKILL", {
-                    "script_id": script_id,
-                    "pid": process.pid
-                })
-                
+                log(
+                    "Force killing process with SIGKILL",
+                    {"script_id": script_id, "pid": process.pid},
+                )
+
                 process.kill()
-                
-                log("SIGKILL sent, waiting up to 1 second", {
-                    "script_id": script_id,
-                    "pid": process.pid
-                })
-                
+
+                log(
+                    "SIGKILL sent, waiting up to 1 second",
+                    {"script_id": script_id, "pid": process.pid},
+                )
+
                 try:
                     exit_code = process.wait(timeout=1.0)
-                    log("Process killed forcefully", {
-                        "script_id": script_id,
-                        "pid": process.pid,
-                        "exit_code": exit_code,
-                        "method": "SIGKILL",
-                        "total_wait_time": round(time.time() - start_time, 2)
-                    })
+                    log(
+                        "Process killed forcefully",
+                        {
+                            "script_id": script_id,
+                            "pid": process.pid,
+                            "exit_code": exit_code,
+                            "method": "SIGKILL",
+                            "total_wait_time": round(time.time() - start_time, 2),
+                        },
+                    )
                     process_stopped = True
-                    
+
                 except subprocess.TimeoutExpired:
-                    log("WARNING: Process survived SIGKILL (zombie or kernel issue)", {
-                        "script_id": script_id,
-                        "pid": process.pid,
-                        "timeout_seconds": 1
-                    })
+                    log(
+                        "WARNING: Process survived SIGKILL (zombie or kernel issue)",
+                        {
+                            "script_id": script_id,
+                            "pid": process.pid,
+                            "timeout_seconds": 1,
+                        },
+                    )
                     # Continue with cleanup anyway
                     process_stopped = True
-                    
+
             except OSError as e:
                 if e.errno == 3:  # ESRCH
-                    log("Process disappeared before SIGKILL", {
-                        "script_id": script_id,
-                        "errno": e.errno
-                    })
+                    log(
+                        "Process disappeared before SIGKILL",
+                        {"script_id": script_id, "errno": e.errno},
+                    )
                     process_stopped = True
                 else:
-                    log("OSError during SIGKILL", {
+                    log(
+                        "OSError during SIGKILL",
+                        {"script_id": script_id, "error": str(e), "errno": e.errno},
+                    )
+
+            except Exception as e:
+                log(
+                    "Unexpected error during SIGKILL",
+                    {
                         "script_id": script_id,
                         "error": str(e),
-                        "errno": e.errno
-                    })
-                    
-            except Exception as e:
-                log("Unexpected error during SIGKILL", {
-                    "script_id": script_id,
-                    "error": str(e),
-                    "error_type": type(e).__name__,
-                    "traceback": traceback.format_exc() if VERBOSE else None
-                })
-        
+                        "error_type": type(e).__name__,
+                        "traceback": traceback.format_exc() if VERBOSE else None,
+                    },
+                )
+
         # Phase 5: Cleanup log file (even if process stop failed)
         if log_fd:
             try:
-                log("Flushing log file buffer", {
-                    "script_id": script_id,
-                    "log_file": log_file
-                })
-                
+                log(
+                    "Flushing log file buffer",
+                    {"script_id": script_id, "log_file": log_file},
+                )
+
                 log_fd.flush()
-                
-                log("Closing log file descriptor", {
-                    "script_id": script_id,
-                    "log_file": log_file
-                })
-                
+
+                log(
+                    "Closing log file descriptor",
+                    {"script_id": script_id, "log_file": log_file},
+                )
+
                 log_fd.close()
-                
-                log("Log file closed successfully", {
-                    "script_id": script_id,
-                    "log_file": log_file
-                })
-                
+
+                log(
+                    "Log file closed successfully",
+                    {"script_id": script_id, "log_file": log_file},
+                )
+
             except ValueError as e:
                 # File already closed
-                log("Log file already closed", {
-                    "script_id": script_id,
-                    "log_file": log_file,
-                    "error": str(e)
-                })
-                
+                log(
+                    "Log file already closed",
+                    {"script_id": script_id, "log_file": log_file, "error": str(e)},
+                )
+
             except Exception as e:
-                log("Error closing log file", {
-                    "script_id": script_id,
-                    "log_file": log_file,
-                    "error": str(e),
-                    "error_type": type(e).__name__,
-                    "traceback": traceback.format_exc() if VERBOSE else None
-                })
+                log(
+                    "Error closing log file",
+                    {
+                        "script_id": script_id,
+                        "log_file": log_file,
+                        "error": str(e),
+                        "error_type": type(e).__name__,
+                        "traceback": traceback.format_exc() if VERBOSE else None,
+                    },
+                )
         else:
-            log("No log file descriptor to close", {
-                "script_id": script_id
-            })
-        
+            log("No log file descriptor to close", {"script_id": script_id})
+
         # Phase 6: Delete log file from disk
         if log_file and os.path.exists(log_file):
             try:
                 file_size = os.path.getsize(log_file)
-                
-                log("Deleting log file from disk", {
-                    "script_id": script_id,
-                    "log_file": log_file,
-                    "size_bytes": file_size
-                })
-                
+
+                log(
+                    "Deleting log file from disk",
+                    {
+                        "script_id": script_id,
+                        "log_file": log_file,
+                        "size_bytes": file_size,
+                    },
+                )
+
                 os.remove(log_file)
-                
-                log("Log file deleted successfully", {
-                    "script_id": script_id,
-                    "log_file": log_file,
-                    "freed_bytes": file_size
-                })
-                
+
+                log(
+                    "Log file deleted successfully",
+                    {
+                        "script_id": script_id,
+                        "log_file": log_file,
+                        "freed_bytes": file_size,
+                    },
+                )
+
             except FileNotFoundError:
-                log("Log file already deleted", {
-                    "script_id": script_id,
-                    "log_file": log_file
-                })
-                
+                log(
+                    "Log file already deleted",
+                    {"script_id": script_id, "log_file": log_file},
+                )
+
             except PermissionError as e:
-                log("Permission denied deleting log file (will be cleaned later)", {
-                    "script_id": script_id,
-                    "log_file": log_file,
-                    "error": str(e)
-                })
-                
+                log(
+                    "Permission denied deleting log file (will be cleaned later)",
+                    {"script_id": script_id, "log_file": log_file, "error": str(e)},
+                )
+
             except Exception as e:
-                log("Error deleting log file", {
-                    "script_id": script_id,
-                    "log_file": log_file,
-                    "error": str(e),
-                    "error_type": type(e).__name__
-                })
+                log(
+                    "Error deleting log file",
+                    {
+                        "script_id": script_id,
+                        "log_file": log_file,
+                        "error": str(e),
+                        "error_type": type(e).__name__,
+                    },
+                )
         elif log_file:
-            log("Log file does not exist (already deleted or never created)", {
-                "script_id": script_id,
-                "log_file": log_file
-            })
-        
+            log(
+                "Log file does not exist (already deleted or never created)",
+                {"script_id": script_id, "log_file": log_file},
+            )
+
         # Phase 7: Remove from running_scripts dict (thread-safe)
         with script_lock:
             if script_id in running_scripts:
                 del running_scripts[script_id]
-                log("Removed from running_scripts registry", {
-                    "script_id": script_id,
-                    "remaining_scripts": len(running_scripts)
-                })
+                log(
+                    "Removed from running_scripts registry",
+                    {"script_id": script_id, "remaining_scripts": len(running_scripts)},
+                )
             else:
-                log("Already removed from registry (race condition)", {
-                    "script_id": script_id
-                })
-        
+                log(
+                    "Already removed from registry (race condition)",
+                    {"script_id": script_id},
+                )
+
         # Phase 8: Calculate final statistics
         total_time = time.time() - start_time
-        
-        log("Script stop completed", {
-            "script_id": script_id,
-            "name": script_name,
-            "success": process_stopped,
-            "total_stop_time_seconds": round(total_time, 3),
-            "script_runtime_seconds": round(runtime, 2)
-        })
-        
+
+        log(
+            "Script stop completed",
+            {
+                "script_id": script_id,
+                "name": script_name,
+                "success": process_stopped,
+                "total_stop_time_seconds": round(total_time, 3),
+                "script_runtime_seconds": round(runtime, 2),
+            },
+        )
+
         # Phase 9: Audio feedback (non-critical, don't let this fail the operation)
         try:
             sound.tone([(400, 100, 0)])
             vlog("Stop sound played", {"script_id": script_id})
         except Exception as e:
-            vlog("Could not play stop sound (non-critical)", {
-                "script_id": script_id,
-                "error": str(e)
-            })
-        
+            vlog(
+                "Could not play stop sound (non-critical)",
+                {"script_id": script_id, "error": str(e)},
+            )
+
         return True
 
     def get_script_log(self, script_id, max_lines=100):
@@ -651,7 +691,7 @@ class ScriptManager:
         with script_lock:
             if script_id not in running_scripts:
                 # Try to read log file even if script stopped
-                log_file = "/tmp/ev3_script_{0}.log".format(script_id)
+                log_file = f"/tmp/ev3_script_{script_id}.log"
                 if not os.path.exists(log_file):
                     return []
             else:
@@ -660,25 +700,23 @@ class ScriptManager:
         try:
             # Read last N lines efficiently using tail
             import subprocess
+
             result = subprocess.run(
                 ["tail", "-n", str(max_lines), log_file],
                 capture_output=True,
                 text=True,
-                timeout=1
+                timeout=1,
             )
-            lines = result.stdout.strip().split('\n') if result.stdout else []
-            
-            vlog("Retrieved script logs", {
-                "script_id": script_id,
-                "line_count": len(lines)
-            })
-            
+            lines = result.stdout.strip().split("\n") if result.stdout else []
+
+            vlog(
+                "Retrieved script logs",
+                {"script_id": script_id, "line_count": len(lines)},
+            )
+
             return lines
         except Exception as e:
-            log("Error reading script log", {
-                "script_id": script_id,
-                "error": str(e)
-            })
+            log("Error reading script log", {"script_id": script_id, "error": str(e)})
             return []
 
     def stop_all_scripts(self):
@@ -689,7 +727,7 @@ class ScriptManager:
 
     def delete_script(self, script_name):
         """Delete a script file"""
-        if not script_name.endswith('.py') or '/' in script_name or '..' in script_name:
+        if not script_name.endswith(".py") or "/" in script_name or ".." in script_name:
             log("Invalid script name for deletion", script_name)
             return False
 
@@ -725,6 +763,7 @@ script_manager = ScriptManager(SCRIPTS_DIR)
 # MOTOR & SENSOR HELPERS
 # ============================================================================
 
+
 def get_motor(port_char):
     """
     Lazy load generic Tacho Motor with CUSTOM RAMPING from config.
@@ -733,45 +772,36 @@ def get_motor(port_char):
         motor = motors[port_char]
         if motor:
             try:
-                if motor.connected: return motor
-            except:
+                if motor.connected:
+                    return motor
+            except Exception:
                 pass
-            log("Motor {0} disconnected".format(port_char))
+            log(f"Motor {port_char} disconnected")
             motors[port_char] = None
 
     try:
         mapping = {"A": OUTPUT_A, "B": OUTPUT_B, "C": OUTPUT_C, "D": OUTPUT_D}
         # Use Universal Motor Class
         m = Motor(mapping[port_char])
-        
+
         # === APPLY SAVED SMOOTHING SETTINGS ===
         # Default to 250ms if port not found in config
-        settings = motor_config.get(port_char, {'up': 250, 'down': 250})
-        m.ramp_up_sp = settings['up']
-        m.ramp_down_sp = settings['down']
-        
+        settings = motor_config.get(port_char, {"up": 250, "down": 250})
+        m.ramp_up_sp = settings["up"]
+        m.ramp_down_sp = settings["down"]
+
         motors[port_char] = m
-        log("Tacho Motor initialized on port {0} (Ramp: {1})".format(port_char, settings['up']))
+        log(
+            "Tacho Motor initialized on port {} (Ramp: {})".format(
+                port_char, settings["up"]
+            )
+        )
     except Exception as e:
-        log("Motor init failed: {0}".format(str(e)))
+        log(f"Motor init failed: {str(e)}")
         motors[port_char] = None
 
     return motors[port_char]
 
-def get_dc_motor(port_char):
-    """Lazy load DC Motor (RCX / Power Functions)"""
-    key = "DC_" + port_char
-    if key in motors and motors[key]:
-        return motors[key]
-
-    try:
-        mapping = {"A": OUTPUT_A, "B": OUTPUT_B, "C": OUTPUT_C, "D": OUTPUT_D}
-        motors[key] = DcMotor(mapping[port_char])
-        log("DC Motor initialized on port {0}".format(port_char))
-    except Exception as e:
-        log("DC Motor init failed: {0}".format(str(e)))
-        motors[key] = None
-    return motors[key]
 
 def get_medium_motor(port_char):
     """Lazy load medium motors"""
@@ -781,10 +811,10 @@ def get_medium_motor(port_char):
         try:
             mapping = {"A": OUTPUT_A, "B": OUTPUT_B, "C": OUTPUT_C, "D": OUTPUT_D}
             motors[key] = MediumMotor(mapping[port_char])
-            log("Medium motor initialized on port {0}".format(port_char))
+            log(f"Medium motor initialized on port {port_char}")
         except Exception as e:
             log(
-                "Failed to initialize medium motor on port {0}".format(port_char),
+                f"Failed to initialize medium motor on port {port_char}",
                 str(e),
             )
             if VERBOSE:
@@ -800,7 +830,7 @@ def get_servo_motor(port_char):
         try:
             mapping = {"A": OUTPUT_A, "B": OUTPUT_B, "C": OUTPUT_C, "D": OUTPUT_D}
             motors[key] = ServoMotor(mapping[port_char])
-            log("Servo motor initialized on port {0}".format(port_char))
+            log(f"Servo motor initialized on port {port_char}")
         except Exception as e:
             log("Servo motor init failed", str(e))
             motors[key] = None
@@ -814,7 +844,7 @@ def get_dc_motor(port_char):
         try:
             mapping = {"A": OUTPUT_A, "B": OUTPUT_B, "C": OUTPUT_C, "D": OUTPUT_D}
             motors[key] = DcMotor(mapping[port_char])
-            log("DC motor initialized on port {0}".format(port_char))
+            log(f"DC motor initialized on port {port_char}")
         except Exception as e:
             log("DC motor init failed", str(e))
             motors[key] = None
@@ -823,7 +853,7 @@ def get_dc_motor(port_char):
 
 def get_sensor(port, sensor_type):
     """Get or create sensor on specified port"""
-    key = "{0}_{1}".format(port, sensor_type)
+    key = f"{port}_{sensor_type}"
     if key not in sensors:
         port_map = {"1": INPUT_1, "2": INPUT_2, "3": INPUT_3, "4": INPUT_4}
         sensor_classes = {
@@ -857,7 +887,7 @@ def get_sensor(port, sensor_type):
             elif sensor_type == "light":
                 sensor.mode = "REFLECT"  # Reflected light mode
 
-            log("Initialized {0} sensor on port {1}".format(sensor_type, port))
+            log(f"Initialized {sensor_type} sensor on port {port}")
         except Exception as e:
             log("Sensor init failed", str(e))
             sensors[key] = None
@@ -887,6 +917,7 @@ def safe_motor_command(motor, command_func, error_msg="Motor operation failed"):
 # HTTP HANDLER
 # ============================================================================
 
+
 class BridgeHandler(http.server.BaseHTTPRequestHandler):
 
     def check_authentication(self):
@@ -896,60 +927,59 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
         Sends 401 response and returns False if invalid.
         """
         global AUTH_HEADER_EXPECTED
-        
+
         # If no auth is configured on the server, allow everything
         if AUTH_HEADER_EXPECTED is None:
             return True
-            
+
         # Get the Authorization header
         auth_header = self.headers.get("Authorization")
-        
+
         if auth_header == AUTH_HEADER_EXPECTED:
             return True
-            
+
         # Auth failed
-        log("Authentication failed from {0}".format(self.client_address[0]))
+        log(f"Authentication failed from {self.client_address[0]}")
         self._send_json({"status": "error", "msg": "Unauthorized"}, 401)
         return False
 
     def log_message(self, format, *args):
         """Log ALL HTTP requests with connection details"""
         global connection_counter
-        
+
         with connection_lock:
             conn_id = connection_counter
-            
+
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-        log_msg = "[{0}] [HTTP] [{1}] {2} {3} from {4}".format(
-            timestamp,
-            conn_id,
-            self.command,
-            self.path,
-            self.client_address[0]
-        )
+        log_msg = f"[{timestamp}] [HTTP] [{conn_id}] {self.command} {self.path} from {self.client_address[0]}"
         print(log_msg)
 
     def end_headers(self):
         """Add CORS headers for browser compatibility (including iOS)"""
         # Allow all origins (restrict in production!)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, DELETE, PUT')
-        self.send_header('Access-Control-Max-Age', '86400')
-        self.send_header('Access-Control-Allow-Credentials', 'true')
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header(
+            "Access-Control-Allow-Headers",
+            "Content-Type, Authorization, X-Requested-With",
+        )
+        self.send_header(
+            "Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE, PUT"
+        )
+        self.send_header("Access-Control-Max-Age", "86400")
+        self.send_header("Access-Control-Allow-Credentials", "true")
         # Cache control for iOS
-        self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         super().end_headers()
 
     def _send_json(self, data, code=200):
         """Send JSON response"""
         vlog("Sending response", {"code": code, "data": data})
-        
-        self.send_response(code)           # 1. Set status (200, 404, etc)
+
+        self.send_response(code)  # 1. Set status (200, 404, etc)
         self.send_header("Content-type", "application/json")  # 2. Set content type
         # Note: CORS headers are added by end_headers() automatically
-        self.end_headers()                 # 3. Send all headers (calls our override)
-        
+        self.end_headers()  # 3. Send all headers (calls our override)
+
         self.wfile.write(json.dumps(data).encode())  # 4. Send body
 
     def do_OPTIONS(self):
@@ -963,7 +993,7 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
         # === Check Auth first ===
         if not self.check_authentication():
             return
-        
+
         content_length = int(self.headers["Content-Length"])
         post_data = self.rfile.read(content_length)
 
@@ -971,7 +1001,7 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
             data = json.loads(post_data.decode("utf-8"))
             command = data.get("cmd")
 
-            log("Command: {0}".format(command))
+            log(f"Command: {command}")
 
             # === SCRIPT MANAGEMENT ===
             if command == "upload_script":
@@ -979,10 +1009,15 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                 code = data["code"]
 
                 # SECURITY: Validate filename
-                if not filename.endswith('.py') or '/' in filename or '..' in filename or '\\' in filename:
+                if (
+                    not filename.endswith(".py")
+                    or "/" in filename
+                    or ".." in filename
+                    or "\\" in filename
+                ):
                     self._send_json({"status": "error", "msg": "Invalid filename"}, 400)
                     return
-                
+
                 os.makedirs(SCRIPTS_DIR, exist_ok=True)
 
                 filepath = os.path.join(SCRIPTS_DIR, filename)
@@ -995,7 +1030,7 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                     f.write(code)
 
                 # Make executable
-                os.chmod(filepath, 0o755)
+                os.chmod(filepath, 0o755)  # nosec B103 — intentional: uploaded helper must be executable
 
                 log("Script uploaded", filename)
 
@@ -1007,62 +1042,76 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
             elif command == "upload_sound":
                 filename = data.get("name")
                 sound_data_b64 = data.get("data")
-                
+
                 if not filename or not sound_data_b64:
-                    self._send_json({"status": "error", "msg": "Missing filename or data"}, 400)
+                    self._send_json(
+                        {"status": "error", "msg": "Missing filename or data"}, 400
+                    )
                     return
-                
+
                 # SECURITY: Validate filename
-                if not filename.endswith(('.wav', '.mp3', '.ogg')):
-                    self._send_json({"status": "error", "msg": "Invalid file type"}, 400)
+                if not filename.endswith((".wav", ".mp3", ".ogg")):
+                    self._send_json(
+                        {"status": "error", "msg": "Invalid file type"}, 400
+                    )
                     return
-                
+
                 # Sanitize filename (prevent path traversal)
                 safe_filename = os.path.basename(filename)
-                safe_filename = "".join(c for c in safe_filename if c.isalnum() or c in '._-')
-                
+                safe_filename = "".join(
+                    c for c in safe_filename if c.isalnum() or c in "._-"
+                )
+
                 if not safe_filename:
                     self._send_json({"status": "error", "msg": "Invalid filename"}, 400)
                     return
-                
+
                 try:
                     # Decode base64
                     try:
                         sound_data = base64.b64decode(sound_data_b64, validate=True)
-                    except:
-                        self._send_json({"status": "error", "msg": "Invalid base64"}, 400)
+                    except Exception:
+                        self._send_json(
+                            {"status": "error", "msg": "Invalid base64"}, 400
+                        )
                         return
-                    
+
                     # Validate size (max 10MB)
                     if len(sound_data) > 10 * 1024 * 1024:
-                        self._send_json({"status": "error", "msg": "File too large (max 10MB)"}, 400)
+                        self._send_json(
+                            {"status": "error", "msg": "File too large (max 10MB)"}, 400
+                        )
                         return
-                    
+
                     # Write to sounds directory
                     filepath = os.path.join(SOUNDS_DIR, safe_filename)
-                    
+
                     with open(filepath, "wb") as f:
                         f.write(sound_data)
-                    
-                    log("Sound uploaded", {
-                        "filename": safe_filename,
-                        "size": len(sound_data),
-                        "path": filepath
-                    })
-                    
-                    self._send_json({
-                        "status": "ok",
-                        "msg": "Sound uploaded",
-                        "filename": safe_filename,
-                        "size": len(sound_data)
-                    })
-                    
+
+                    log(
+                        "Sound uploaded",
+                        {
+                            "filename": safe_filename,
+                            "size": len(sound_data),
+                            "path": filepath,
+                        },
+                    )
+
+                    self._send_json(
+                        {
+                            "status": "ok",
+                            "msg": "Sound uploaded",
+                            "filename": safe_filename,
+                            "size": len(sound_data),
+                        }
+                    )
+
                 except Exception as e:
                     log("Sound upload failed", str(e))
                     if VERBOSE:
                         traceback.print_exc()
                     self._send_json({"status": "error", "msg": str(e)}, 500)
-
 
             elif command == "run_script":
                 script_name = data["name"]
@@ -1102,13 +1151,13 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
             elif command == "configure_port":
                 port_num = str(data["port"])
                 device_type = data["device"]
-                
+
                 # Map "1" -> "in1", etc.
                 address = "in" + port_num
-                
+
                 try:
                     p = LegoPort(address)
-                    
+
                     if device_type == "lego-nxt-touch":
                         # 1. Set mode to analog FIRST (required by driver)
                         p.mode = "nxt-analog"
@@ -1116,31 +1165,31 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                         time.sleep(0.1)
                         # 3. Force the specific device driver
                         p.set_device = "lego-nxt-touch"
-                        vlog("Configured Port {0} for NXT Touch".format(port_num))
-                        
+                        vlog(f"Configured Port {port_num} for NXT Touch")
+
                     elif device_type == "lego-nxt-light":
                         p.mode = "nxt-analog"
                         time.sleep(0.1)
                         p.set_device = "lego-nxt-light"
-                        vlog("Configured Port {0} for NXT Light".format(port_num))
-                        
+                        vlog(f"Configured Port {port_num} for NXT Light")
+
                     elif device_type == "lego-nxt-sound":
                         p.mode = "nxt-analog"
                         time.sleep(0.1)
                         p.set_device = "lego-nxt-sound"
-                        vlog("Configured Port {0} for NXT Sound".format(port_num))
-                        
+                        vlog(f"Configured Port {port_num} for NXT Sound")
+
                     elif device_type == "reset":
                         p.mode = "auto"
-                        vlog("Reset Port {0} to Auto".format(port_num))
-                        
+                        vlog(f"Reset Port {port_num} to Auto")
+
                     # Give the kernel a moment to load the driver before returning
                     time.sleep(0.5)
                     self._send_json({"status": "ok"})
-                    
+
                 except Exception as e:
                     # Log the specific error for debugging
-                    log("Port config failed for {0}: {1}".format(address, str(e)))
+                    log(f"Port config failed for {address}: {str(e)}")
                     self._send_json({"status": "error", "msg": str(e)})
 
             # === MOTORS ===
@@ -1291,21 +1340,21 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                             "msg": "Tank drive failed - motors disconnected",
                         }
                     )
-            
+
             # === SET MOTOR RAMPING ===
             elif command == "set_motor_ramping":
                 port = data["port"]
                 ramp_up = int(data.get("up", 250))
                 ramp_down = int(data.get("down", 250))
-                
+
                 # 1. Save to Global Memory (Persistent)
                 if port in motor_config:
-                    motor_config[port]['up'] = ramp_up
-                    motor_config[port]['down'] = ramp_down
-                
+                    motor_config[port]["up"] = ramp_up
+                    motor_config[port]["down"] = ramp_down
+
                 # 2. Update Active Motor Immediately (if connected)
-                m = get_motor(port) # This will apply the new config
-                
+                m = get_motor(port)  # This will apply the new config
+
                 vlog("Ramping set", {"port": port, "up": ramp_up, "down": ramp_down})
                 self._send_json({"status": "ok"})
 
@@ -1357,7 +1406,9 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                     m.run_direct()
                     self._send_json({"status": "ok"})
                 else:
-                    self._send_json({"status": "error", "msg": "DC Motor not connected"})
+                    self._send_json(
+                        {"status": "error", "msg": "DC Motor not connected"}
+                    )
 
             elif command == "dc_motor_stop":
                 m = get_dc_motor(data["port"])
@@ -1365,23 +1416,25 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                     m.stop()
                     self._send_json({"status": "ok"})
                 else:
-                    self._send_json({"status": "error", "msg": "DC Motor not connected"})
+                    self._send_json(
+                        {"status": "error", "msg": "DC Motor not connected"}
+                    )
 
             # === MOVE STEERING (High-level steering) ===
-            
+
             elif command == "move_steering":
                 try:
-                    # FIX: We MUST pass motor_class=Motor. 
+                    # FIX: We MUST pass motor_class=Motor.
                     # If we don't, ev3dev2 defaults to LargeMotor and crashes with Medium/NXT motors.
                     steering = MoveSteering(
-                        data.get("left_port", "B"), 
+                        data.get("left_port", "B"),
                         data.get("right_port", "C"),
-                        motor_class=Motor
+                        motor_class=Motor,
                     )
 
                     # Steering: -100 (turn left on spot) to 100 (turn right on spot)
                     # Speed: -100 to 100
-                    
+
                     steer_val = data["steering"]
                     speed_val = SpeedPercent(data["speed"])
                     brake_mode = data.get("brake", True)
@@ -1392,7 +1445,7 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                             speed_val,
                             data["rotations"],
                             brake=brake_mode,
-                            block=False  # Async: Don't block the server
+                            block=False,  # Async: Don't block the server
                         )
                     elif "seconds" in data:
                         steering.on_for_seconds(
@@ -1400,7 +1453,7 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                             speed_val,
                             data["seconds"],
                             brake=brake_mode,
-                            block=False  # Async
+                            block=False,  # Async
                         )
                     else:
                         steering.on(steer_val, speed_val)
@@ -1533,8 +1586,9 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
 
             elif command == "draw_image":
                 try:
-                    from PIL import Image
                     import io
+
+                    from PIL import Image
 
                     # Expect base64 encoded image data
                     img_data = base64.b64decode(data["data"])
@@ -1630,10 +1684,10 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                 # Data comes in as [[note, dur], [note, dur]]
                 raw_notes = data.get("notes", [])
                 tempo = data.get("tempo", 120)
-                
+
                 # Convert list of lists to list of tuples for ev3dev2
                 notes = [(n[0], n[1]) for n in raw_notes]
-                
+
                 try:
                     sound.play_song(notes, tempo=tempo)
                     vlog("Playing song", {"notes_count": len(notes)})
@@ -1737,7 +1791,7 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"status": "ok"})
 
             else:
-                log("Unknown command: {0}".format(command))
+                log(f"Unknown command: {command}")
                 self._send_json({"status": "error", "msg": "Unknown command"}, 400)
 
         except Exception as e:
@@ -1749,7 +1803,7 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         """Handle GET requests (sensor reads, status etc)"""
         vlog("GET request", {"path": self.path})
-        
+
         # === Check Auth first ===
         if not self.check_authentication():
             return
@@ -1788,28 +1842,32 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
             elif self.path.startswith("/script/") and "/logs" in self.path:
                 try:
                     # Parse: /script/123/logs?max=100
-                    parts = self.path.split('/')
+                    parts = self.path.split("/")
                     script_id = int(parts[2])
-                    
+
                     # Parse query parameters
                     max_lines = 100
-                    if '?' in self.path:
-                        query = self.path.split('?')[1]
-                        for param in query.split('&'):
-                            if param.startswith('max='):
-                                max_lines = int(param.split('=')[1])
-                    
+                    if "?" in self.path:
+                        query = self.path.split("?")[1]
+                        for param in query.split("&"):
+                            if param.startswith("max="):
+                                max_lines = int(param.split("=")[1])
+
                     lines = script_manager.get_script_log(script_id, max_lines)
-                    
-                    self._send_json({
-                        "status": "ok",
-                        "script_id": script_id,
-                        "lines": lines,
-                        "count": len(lines)
-                    })
-                    
+
+                    self._send_json(
+                        {
+                            "status": "ok",
+                            "script_id": script_id,
+                            "lines": lines,
+                            "count": len(lines),
+                        }
+                    )
+
                 except ValueError:
-                    self._send_json({"status": "error", "msg": "Invalid script ID"}, 400)
+                    self._send_json(
+                        {"status": "error", "msg": "Invalid script ID"}, 400
+                    )
                 except Exception as e:
                     log("Error fetching logs", str(e))
                     self._send_json({"status": "error", "msg": str(e)}, 500)
@@ -2007,7 +2065,7 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                 port = parts[3]
                 mode = parts[4] if len(parts) > 4 else "db"  # db or dba
 
-                sensor = get_sensor(port, "sound") 
+                sensor = get_sensor(port, "sound")
 
                 if not sensor:
                     self._send_json({"value": 0})
@@ -2080,28 +2138,28 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
 
             elif self.path == "/profile" or self.path == "/ev3.mobileconfig":
                 """Generate iOS configuration profile with embedded certificate"""
-                log("iOS profile requested by {0}".format(self.client_address[0]))
-                
+                log(f"iOS profile requested by {self.client_address[0]}")
+
                 try:
                     import socket
                     import uuid
-                    
+
                     # Read certificate
-                    with open(SSL_CERT, 'rb') as f:
+                    with open(SSL_CERT, "rb") as f:
                         cert_data = f.read()
-                    
+
                     # Base64 encode for embedding
-                    cert_b64 = base64.b64encode(cert_data).decode('ascii')
-                    
+                    cert_b64 = base64.b64encode(cert_data).decode("ascii")
+
                     # Generate UUIDs
                     profile_uuid = str(uuid.uuid4()).upper()
                     cert_uuid = str(uuid.uuid4()).upper()
-                    
+
                     hostname = socket.gethostname()
                     local_ip = socket.gethostbyname(hostname)
-                    
+
                     # Create configuration profile
-                    profile = """<?xml version="1.0" encoding="UTF-8"?>
+                    profile = f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -2112,7 +2170,7 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
             <string>ev3-robot.crt</string>
             <key>PayloadContent</key>
             <data>
-{cert_data}
+{cert_b64}
             </data>
             <key>PayloadDescription</key>
             <string>EV3 Robot SSL Certificate - Allows secure HTTPS connection to your EV3</string>
@@ -2129,9 +2187,9 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
         </dict>
     </array>
     <key>PayloadDescription</key>
-    <string>Install this profile to trust the EV3 Robot HTTPS certificate. This allows secure connection to your EV3 at {ip}</string>
+    <string>Install this profile to trust the EV3 Robot HTTPS certificate. This allows secure connection to your EV3 at {local_ip}</string>
     <key>PayloadDisplayName</key>
-    <string>EV3 Robot ({ip})</string>
+    <string>EV3 Robot ({local_ip})</string>
     <key>PayloadIdentifier</key>
     <string>com.ev3dev.profile.{profile_uuid}</string>
     <key>PayloadRemovalDisallowed</key>
@@ -2143,82 +2201,88 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
     <key>PayloadVersion</key>
     <integer>1</integer>
 </dict>
-</plist>""".format(
-                        cert_data=cert_b64,
-                        cert_uuid=cert_uuid,
-                        profile_uuid=profile_uuid,
-                        ip=local_ip
-                    )
-                    
-                    profile_bytes = profile.encode('utf-8')
-                    
-                    log("Sending iOS profile ({0} bytes)".format(len(profile_bytes)))
-                    
+</plist>"""
+
+                    profile_bytes = profile.encode("utf-8")
+
+                    log(f"Sending iOS profile ({len(profile_bytes)} bytes)")
+
                     self.send_response(200)
                     self.send_header("Content-Type", "application/x-apple-aspen-config")
-                    self.send_header("Content-Disposition", 'attachment; filename="EV3-Robot.mobileconfig"')
+                    self.send_header(
+                        "Content-Disposition",
+                        'attachment; filename="EV3-Robot.mobileconfig"',
+                    )
                     self.send_header("Content-Length", str(len(profile_bytes)))
                     self.end_headers()
                     self.wfile.write(profile_bytes)
-                    
-                    log("iOS profile sent successfully to {0}".format(self.client_address[0]))
-                    
+
+                    log(f"iOS profile sent successfully to {self.client_address[0]}")
+
                 except Exception as e:
-                    log("Profile generation error: {0}".format(str(e)))
+                    log(f"Profile generation error: {str(e)}")
                     if VERBOSE:
                         traceback.print_exc()
                     self._send_json({"status": "error", "msg": str(e)}, 500)
-            
+
             # === CERTIFICATE DOWNLOAD ===
             elif self.path == "/certificate" or self.path == "/ev3.crt":
                 """Serve certificate file for iOS/macOS installation"""
-                log("Certificate download requested by {0}".format(self.client_address[0]))
-                
+                log(f"Certificate download requested by {self.client_address[0]}")
+
                 try:
                     cert_path = os.path.join(os.getcwd(), SSL_CERT)
-                    
+
                     if not os.path.exists(cert_path):
                         cert_path = SSL_CERT
-                    
+
                     if not os.path.exists(cert_path):
-                        log("Certificate file not found: {0}".format(cert_path))
-                        self._send_json({"status": "error", "msg": "Certificate not found"}, 404)
+                        log(f"Certificate file not found: {cert_path}")
+                        self._send_json(
+                            {"status": "error", "msg": "Certificate not found"}, 404
+                        )
                         return
-                    
-                    log("Reading certificate from: {0}".format(cert_path))
-                    
-                    with open(cert_path, 'rb') as f:
+
+                    log(f"Reading certificate from: {cert_path}")
+
+                    with open(cert_path, "rb") as f:
                         cert_data = f.read()
-                    
+
                     # Verify it's valid PEM format
-                    cert_str = cert_data.decode('utf-8')
-                    if not cert_str.startswith('-----BEGIN CERTIFICATE-----'):
+                    cert_str = cert_data.decode("utf-8")
+                    if not cert_str.startswith("-----BEGIN CERTIFICATE-----"):
                         log("ERROR: Certificate file is not in PEM format!")
-                        self._send_json({"status": "error", "msg": "Invalid certificate format"}, 500)
+                        self._send_json(
+                            {"status": "error", "msg": "Invalid certificate format"},
+                            500,
+                        )
                         return
-                    
-                    log("Sending certificate ({0} bytes)".format(len(cert_data)))
-                    
+
+                    log(f"Sending certificate ({len(cert_data)} bytes)")
+
                     self.send_response(200)
                     # Use proper MIME type for certificates
                     self.send_header("Content-Type", "application/x-pem-file")
-                    self.send_header("Content-Disposition", 'attachment; filename="ev3.crt"')
+                    self.send_header(
+                        "Content-Disposition", 'attachment; filename="ev3.crt"'
+                    )
                     self.send_header("Content-Length", str(len(cert_data)))
                     self.send_header("Cache-Control", "no-cache")
                     self.end_headers()
                     self.wfile.write(cert_data)
-                    
-                    log("Certificate sent successfully to {0}".format(self.client_address[0]))
-                    
+
+                    log(f"Certificate sent successfully to {self.client_address[0]}")
+
                 except Exception as e:
-                    log("Certificate download error: {0}".format(str(e)))
+                    log(f"Certificate download error: {str(e)}")
                     if VERBOSE:
                         traceback.print_exc()
                     self._send_json({"status": "error", "msg": str(e)}, 500)
 
             elif self.path == "/test.html" or self.path == "/test":
                 """Simple test page"""
-                html = """<!DOCTYPE html>
+                html = (
+                    """<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
@@ -2234,21 +2298,23 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
 </head>
 <body>
     <h1>EV3 Bridge Test Page</h1>
-    
-    <p>Protocol: <strong>""" + ("HTTPS" if USE_SSL else "HTTP") + """</strong></p>
-    
+
+    <p>Protocol: <strong>"""
+                    + ("HTTPS" if USE_SSL else "HTTP")
+                    + """</strong></p>
+
     <button onclick="testStatus()">Test /status</button>
     <button onclick="testScripts()">Test /scripts</button>
     <button onclick="testBattery()">Test /battery</button>
-    
+
     <h2>Result:</h2>
     <pre id="result">Click a button to test...</pre>
-    
+
     <script>
     async function testEndpoint(url, name) {
         const resultEl = document.getElementById('result');
         resultEl.textContent = 'Testing ' + name + '...\\n';
-        
+
         try {
             const response = await fetch(url);
             const data = await response.json();
@@ -2259,19 +2325,20 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
             resultEl.className = 'error';
         }
     }
-    
+
     function testStatus() { testEndpoint('/status', '/status'); }
     function testScripts() { testEndpoint('/scripts', '/scripts'); }
     function testBattery() { testEndpoint('/battery', '/battery'); }
     </script>
 </body>
 </html>"""
+                )
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(html.encode())))
                 self.end_headers()
                 self.wfile.write(html.encode())
-                log("Test page served to {0}".format(self.client_address[0]))
+                log(f"Test page served to {self.client_address[0]}")
 
             else:
                 self._send_json({"status": "error", "msg": "Unknown endpoint"}, 404)
@@ -2360,14 +2427,14 @@ def draw_status_screen():
     display.text_pixels("=" * 26, x=2, y=15)
 
     # Connection info
-    display.text_pixels("Port: {0}".format(PORT), x=5, y=25)
-    display.text_pixels("Scripts: {0}".format(len(script_list)), x=5, y=40)
-    display.text_pixels("Running: {0}".format(len(running_scripts)), x=5, y=55)
+    display.text_pixels(f"Port: {PORT}", x=5, y=25)
+    display.text_pixels(f"Scripts: {len(script_list)}", x=5, y=40)
+    display.text_pixels(f"Running: {len(running_scripts)}", x=5, y=55)
 
     # Show running script names
     if running_scripts:
         y = 70
-        for script_id, info in list(running_scripts.items())[:2]:  # Show max 2
+        for _script_id, info in list(running_scripts.items())[:2]:  # Show max 2
             name = info["name"]
             if len(name) > 18:
                 name = name[:15] + "..."
@@ -2378,10 +2445,8 @@ def draw_status_screen():
     try:
         voltage = power.measured_volts
         percentage = max(0, min(100, ((voltage - 7.4) / (9.0 - 7.4)) * 100))
-        display.text_pixels(
-            "Battery: {0:.1f}V ({1:.0f}%)".format(voltage, percentage), x=5, y=105
-        )
-    except:
+        display.text_pixels(f"Battery: {voltage:.1f}V ({percentage:.0f}%)", x=5, y=105)
+    except Exception:
         pass
 
     # Footer
@@ -2511,7 +2576,7 @@ def ui_loop():
 
 def generate_self_signed_cert(cert_file="ev3.crt", key_file="ev3.key"):
     """Generate self-signed certificate compatible with macOS and iOS"""
-    
+
     # If files exist, verify they're valid
     if os.path.exists(cert_file) and os.path.exists(key_file):
         try:
@@ -2519,18 +2584,18 @@ def generate_self_signed_cert(cert_file="ev3.crt", key_file="ev3.key"):
             result = subprocess.Popen(
                 ["openssl", "x509", "-in", cert_file, "-noout"],
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
+                stderr=subprocess.PIPE,
             )
             stdout, stderr = result.communicate()
-            
+
             if result.returncode == 0:
-                log("Using existing valid certificate: {0}".format(cert_file))
+                log(f"Using existing valid certificate: {cert_file}")
                 return True
             else:
                 log("Existing certificate is invalid, regenerating...")
                 os.remove(cert_file)
                 os.remove(key_file)
-        except:
+        except Exception:
             pass
 
     try:
@@ -2540,12 +2605,12 @@ def generate_self_signed_cert(cert_file="ev3.crt", key_file="ev3.key"):
         local_ip = socket.gethostbyname(hostname)
 
         log("Generating SSL certificate for macOS/iOS compatibility...")
-        log("IP Address: {0}".format(local_ip))
-        log("Hostname: {0}".format(hostname))
+        log(f"IP Address: {local_ip}")
+        log(f"Hostname: {hostname}")
 
         # Create OpenSSL config file with proper extensions
         config_file = "/tmp/ev3_openssl.cnf"
-        config_content = """[req]
+        config_content = f"""[req]
 default_bits = 2048
 prompt = no
 default_md = sha256
@@ -2559,7 +2624,7 @@ ST = State
 L = City
 O = EV3 Robot
 OU = EV3dev
-CN = {ip}
+CN = {local_ip}
 
 [v3_req]
 basicConstraints = CA:FALSE
@@ -2572,51 +2637,51 @@ keyUsage = nonRepudiation, digitalSignature, keyEncipherment
 subjectAltName = @alt_names
 
 [alt_names]
-IP.1 = {ip}
+IP.1 = {local_ip}
 DNS.1 = {hostname}
 DNS.2 = localhost
 DNS.3 = ev3dev.local
 DNS.4 = ev3dev
-""".format(ip=local_ip, hostname=hostname)
+"""
 
         with open(config_file, "w") as f:
             f.write(config_content)
 
-        log("OpenSSL config created: {0}".format(config_file))
+        log(f"OpenSSL config created: {config_file}")
 
         # Generate the certificate
         cmd = [
-            "openssl", "req",
+            "openssl",
+            "req",
             "-x509",
-            "-newkey", "rsa:2048",
+            "-newkey",
+            "rsa:2048",
             "-nodes",
-            "-keyout", key_file,
-            "-out", cert_file,
-            "-days", "825",  # iOS maximum
-            "-config", config_file
+            "-keyout",
+            key_file,
+            "-out",
+            cert_file,
+            "-days",
+            "825",  # iOS maximum
+            "-config",
+            config_file,
         ]
 
-        log("Running: {0}".format(" ".join(cmd)))
-        
-        result = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
+        log("Running: {}".format(" ".join(cmd)))
+
+        result = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         stdout, stderr = result.communicate()
 
         if result.returncode != 0:
             log("Certificate generation failed!")
-            log("STDERR: {0}".format(stderr.decode() if stderr else "None"))
-            log("STDOUT: {0}".format(stdout.decode() if stdout else "None"))
+            log("STDERR: {}".format(stderr.decode() if stderr else "None"))
+            log("STDOUT: {}".format(stdout.decode() if stdout else "None"))
             return False
 
         # Verify the certificate was created correctly
         verify_cmd = ["openssl", "x509", "-in", cert_file, "-text", "-noout"]
         verify_result = subprocess.Popen(
-            verify_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            verify_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
         stdout, stderr = verify_result.communicate()
 
@@ -2628,7 +2693,7 @@ DNS.4 = ev3dev
             log("=" * 60)
             log("")
             log("macOS:")
-            log("  1. Download: https://{0}:8443/certificate".format(local_ip))
+            log(f"  1. Download: https://{local_ip}:8443/certificate")
             log("  2. Double-click ev3.crt")
             log("  3. Select 'System' keychain (requires admin password)")
             log("  4. Click 'Add'")
@@ -2636,22 +2701,22 @@ DNS.4 = ev3dev
             log("  6. Double-click → Trust → 'Always Trust'")
             log("")
             log("iOS:")
-            log("  1. Safari: https://{0}:8443/certificate".format(local_ip))
+            log(f"  1. Safari: https://{local_ip}:8443/certificate")
             log("  2. Settings → Profile Downloaded → Install")
             log("  3. Settings → General → About → Certificate Trust Settings")
             log("  4. Enable the EV3 certificate")
             log("")
             log("=" * 60)
             log("")
-            
+
             return True
         else:
             log("Certificate verification failed!")
-            log("STDERR: {0}".format(stderr.decode() if stderr else "None"))
+            log("STDERR: {}".format(stderr.decode() if stderr else "None"))
             return False
 
     except Exception as e:
-        log("Certificate generation failed: {0}".format(str(e)))
+        log(f"Certificate generation failed: {str(e)}")
         if VERBOSE:
             traceback.print_exc()
         return False
@@ -2660,29 +2725,29 @@ DNS.4 = ev3dev
 def run_server_on_port(port, use_ssl=False):
     """Start server on specified port with optional SSL"""
     global connection_counter
-    
+
     protocol = "HTTPS" if use_ssl else "HTTP"
-    log("Initializing {0} server on port {1}...".format(protocol, port))
-    
+    log(f"Initializing {protocol} server on port {port}...")
+
     try:
         socketserver.TCPServer.allow_reuse_address = True
         server = socketserver.TCPServer(("", port), BridgeHandler)
         server.allow_reuse_address = True
-        
-        log("{0} socket created on port {1}".format(protocol, port))
+
+        log(f"{protocol} socket created on port {port}")
 
         if use_ssl:
             if not generate_self_signed_cert(SSL_CERT, SSL_KEY):
                 log("Cannot start HTTPS without certificates")
                 return
-                
+
             if not os.path.exists(SSL_CERT) or not os.path.exists(SSL_KEY):
                 log("ERROR: Certificate files not found")
                 return
-                
+
             log("Certificate files verified:")
-            log("  - Cert: {0} ({1} bytes)".format(SSL_CERT, os.path.getsize(SSL_CERT)))
-            log("  - Key:  {0} ({1} bytes)".format(SSL_KEY, os.path.getsize(SSL_KEY)))
+            log(f"  - Cert: {SSL_CERT} ({os.path.getsize(SSL_CERT)} bytes)")
+            log(f"  - Key:  {SSL_KEY} ({os.path.getsize(SSL_KEY)} bytes)")
 
             try:
                 context = ssl.SSLContext(ssl.PROTOCOL_TLS)
@@ -2691,57 +2756,55 @@ def run_server_on_port(port, use_ssl=False):
                 context.options |= ssl.OP_NO_SSLv3
                 context.check_hostname = False
                 context.verify_mode = ssl.CERT_NONE
-                
+
                 try:
-                    context.set_ciphers('HIGH:!aNULL:!MD5')
-                except:
+                    context.set_ciphers("HIGH:!aNULL:!MD5")
+                except Exception:
                     pass
-                
+
                 server.socket = context.wrap_socket(
-                    server.socket, 
-                    server_side=True,
-                    do_handshake_on_connect=True
+                    server.socket, server_side=True, do_handshake_on_connect=True
                 )
                 log("SSL configured successfully")
-                
+
             except Exception as e:
-                log("SSL setup failed: {0}".format(str(e)))
+                log(f"SSL setup failed: {str(e)}")
                 if VERBOSE:
                     traceback.print_exc()
                 return
 
         # Connection tracking
         original_finish_request = server.finish_request
-        
+
         def tracked_finish_request(request, client_address):
             global connection_counter
             with connection_lock:
                 conn_id = connection_counter
                 connection_counter += 1
-            
-            vlog("New {0} connection #{1} from {2}".format(protocol, conn_id, client_address[0]))
-            
+
+            vlog(f"New {protocol} connection #{conn_id} from {client_address[0]}")
+
             try:
                 original_finish_request(request, client_address)
-                vlog("Connection #{0} completed successfully".format(conn_id))
+                vlog(f"Connection #{conn_id} completed successfully")
             except ssl.SSLError as e:
-                log("SSL Error on connection #{0}: {1}".format(conn_id, str(e)))
+                log(f"SSL Error on connection #{conn_id}: {str(e)}")
                 if VERBOSE:
                     traceback.print_exc()
             except Exception as e:
-                log("Error on connection #{0}: {1}".format(conn_id, str(e)))
+                log(f"Error on connection #{conn_id}: {str(e)}")
                 if VERBOSE:
                     traceback.print_exc()
-        
+
         server.finish_request = tracked_finish_request
-        
-        log("{0} server ready on port {1} - accepting connections...".format(protocol, port))
+
+        log(f"{protocol} server ready on port {port} - accepting connections...")
         server.serve_forever()
-        
+
     except KeyboardInterrupt:
-        log("{0} server shutting down...".format(protocol))
+        log(f"{protocol} server shutting down...")
     except Exception as e:
-        log("{0} server error: {1}".format(protocol, str(e)))
+        log(f"{protocol} server error: {str(e)}")
         if VERBOSE:
             traceback.print_exc()
 
@@ -2750,13 +2813,24 @@ def main():
     global VERBOSE, PORT, USE_SSL, SSL_CERT, SSL_KEY, AUTH_HEADER_EXPECTED
 
     parser = argparse.ArgumentParser(description="EV3 Bridge Server v2.3")
-    parser.add_argument("--port", type=int, default=None, help="Custom port (overrides defaults)")
+    parser.add_argument(
+        "--port", type=int, default=None, help="Custom port (overrides defaults)"
+    )
     parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--no-ui", action="store_true")
-    parser.add_argument("--auth", type=str, default=None, help="Enable Basic Auth (format: username:password)")
+    parser.add_argument(
+        "--auth",
+        type=str,
+        default=None,
+        help="Enable Basic Auth (format: username:password)",
+    )
 
-    parser.add_argument("--http-only", action="store_true", help="Disable HTTPS (HTTP only)")
-    parser.add_argument("--https-only", action="store_true", help="Disable HTTP (HTTPS only)")
+    parser.add_argument(
+        "--http-only", action="store_true", help="Disable HTTPS (HTTP only)"
+    )
+    parser.add_argument(
+        "--https-only", action="store_true", help="Disable HTTP (HTTPS only)"
+    )
     parser.add_argument("--cert", type=str, default="ev3.crt")
     parser.add_argument("--key", type=str, default="ev3.key")
 
@@ -2771,7 +2845,7 @@ def main():
         if ":" in args.auth:
             # Create the expected header value: "Basic <base64>"
             # We assume ASCII for user:pass as per HTTP standard
-            b64_creds = base64.b64encode(args.auth.encode('utf-8')).decode('utf-8')
+            b64_creds = base64.b64encode(args.auth.encode("utf-8")).decode("utf-8")
             AUTH_HEADER_EXPECTED = "Basic " + b64_creds
             print("Authentication ENABLED. User: " + args.auth.split(":")[0])
         else:
@@ -2785,18 +2859,19 @@ def main():
     # Determine which servers to start
     start_http = not args.https_only
     start_https = not args.http_only
-    
+
     http_port = args.port if args.port else 8080
     https_port = args.port if args.port else 8443
 
     # Start script scanning thread
     log("Starting script scanner thread...")
+
     def script_scanner():
         while True:
             try:
                 script_manager.scan_scripts()
             except Exception as e:
-                log("Script scanner error: {0}".format(str(e)))
+                log(f"Script scanner error: {str(e)}")
             time.sleep(2)
 
     scanner_thread = threading.Thread(target=script_scanner, daemon=True)
@@ -2805,29 +2880,26 @@ def main():
     # Get IP address
     try:
         import socket
+
         hostname = socket.gethostname()
         local_ip = socket.gethostbyname(hostname)
-    except:
+    except Exception:
         local_ip = "UNKNOWN"
 
     # Start HTTP server
     if start_http:
-        log("Starting HTTP server thread on port {0}...".format(http_port))
+        log(f"Starting HTTP server thread on port {http_port}...")
         http_thread = threading.Thread(
-            target=run_server_on_port,
-            args=(http_port, False),
-            daemon=True
+            target=run_server_on_port, args=(http_port, False), daemon=True
         )
         http_thread.start()
         time.sleep(0.5)
 
     # Start HTTPS server
     if start_https:
-        log("Starting HTTPS server thread on port {0}...".format(https_port))
+        log(f"Starting HTTPS server thread on port {https_port}...")
         https_thread = threading.Thread(
-            target=run_server_on_port,
-            args=(https_port, True),
-            daemon=True
+            target=run_server_on_port, args=(https_port, True), daemon=True
         )
         https_thread.start()
         time.sleep(0.5)
@@ -2836,10 +2908,10 @@ def main():
     log("EV3 Bridge Server Ready!")
     log("=" * 60)
     if start_http:
-        log("HTTP:  http://{0}:{1}/test.html".format(local_ip, http_port))
+        log(f"HTTP:  http://{local_ip}:{http_port}/test.html")
         log("       (Use this for Safari, iOS, all browsers)")
     if start_https:
-        log("HTTPS: https://{0}:{1}/test.html".format(local_ip, https_port))
+        log(f"HTTPS: https://{local_ip}:{https_port}/test.html")
         log("       (For curl, Firefox, apps with cert installed)")
     log("=" * 60)
     log("")

@@ -1146,24 +1146,34 @@ def generate_self_signed_cert(cert_file="ev3.crt", key_file="ev3.key"):
     if os.path.exists(cert_file) and os.path.exists(key_file):
         log("Using existing certificate: {0}".format(cert_file))
         return True
-    
+
     log("Generating self-signed certificate...")
     try:
         # Get EV3's IP address for CN
         import socket
+
         hostname = socket.gethostname()
         local_ip = socket.gethostbyname(hostname)
-        
+
         cmd = [
-            "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
-            "-out", cert_file,
-            "-keyout", key_file,
-            "-days", "365",
-            "-subj", "/CN={0}".format(local_ip)
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-out",
+            cert_file,
+            "-keyout",
+            key_file,
+            "-days",
+            "365",
+            "-subj",
+            "/CN={0}".format(local_ip),
         ]
-        
+
         result = subprocess.run(cmd, capture_output=True, text=True)
-        
+
         if result.returncode == 0:
             log("Certificate generated successfully")
             log("Install {0} on iOS devices to trust certificate".format(cert_file))
@@ -1171,7 +1181,7 @@ def generate_self_signed_cert(cert_file="ev3.crt", key_file="ev3.key"):
         else:
             log("Certificate generation failed", result.stderr)
             return False
-            
+
     except Exception as e:
         log("Failed to generate certificate", str(e))
         if VERBOSE:
@@ -1189,17 +1199,17 @@ def run_server():
         # Create base server
         server = socketserver.TCPServer(("", PORT), BridgeHandler)
         server.allow_reuse_address = True
-        
+
         # Wrap with SSL if enabled
         if USE_SSL:
             log("Enabling HTTPS/SSL mode")
-            
+
             # Generate certificate if needed
             if not os.path.exists(SSL_CERT) or not os.path.exists(SSL_KEY):
                 if not generate_self_signed_cert(SSL_CERT, SSL_KEY):
                     log("Cannot start HTTPS server without certificates")
                     return
-            
+
             # Create SSL context
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             try:
@@ -1218,11 +1228,11 @@ def run_server():
         log("Protocol: {0}".format("HTTPS" if USE_SSL else "HTTP"))
         log("Listening on port {0}".format(PORT))
         log("Verbose logging: {0}".format("ENABLED" if VERBOSE else "DISABLED"))
-        
+
         if USE_SSL:
             log("Certificate: {0}".format(SSL_CERT))
             log("IMPORTANT: Install {0} on client devices!".format(SSL_CERT))
-        
+
         log("Scripts directory: {0}".format(SCRIPTS_DIR))
         log("Sounds directory: {0}".format(SOUNDS_DIR))
         log("=" * 50)
@@ -1240,6 +1250,7 @@ def run_server():
             server.shutdown()
             server.server_close()
         log("Server stopped")
+
 
 def ui_loop():
     """Display UI on EV3 screen"""
@@ -1346,16 +1357,22 @@ def main():
         "--no-ui", action="store_true", help="Disable LCD UI (headless mode)"
     )
     parser.add_argument(
-        "--ssl", "--https", action="store_true", 
-        help="Enable HTTPS/SSL (uses port 8443 by default)"
+        "--ssl",
+        "--https",
+        action="store_true",
+        help="Enable HTTPS/SSL (uses port 8443 by default)",
     )
     parser.add_argument(
-        "--cert", type=str, default="ev3.crt",
-        help="SSL certificate file (default: ev3.crt)"
+        "--cert",
+        type=str,
+        default="ev3.crt",
+        help="SSL certificate file (default: ev3.crt)",
     )
     parser.add_argument(
-        "--key", type=str, default="ev3.key",
-        help="SSL private key file (default: ev3.key)"
+        "--key",
+        type=str,
+        default="ev3.key",
+        help="SSL private key file (default: ev3.key)",
     )
 
     args = parser.parse_args()
@@ -1365,7 +1382,7 @@ def main():
     USE_SSL = args.ssl
     SSL_CERT = args.cert
     SSL_KEY = args.key
-    
+
     # Default to port 8443 for HTTPS if not explicitly set
     if USE_SSL and args.port == 8080:
         PORT = 8443
@@ -1408,6 +1425,7 @@ def main():
             log("Fatal error in UI loop", str(e))
             if VERBOSE:
                 traceback.print_exc()
+
 
 if __name__ == "__main__":
     main()
