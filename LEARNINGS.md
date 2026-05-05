@@ -470,3 +470,178 @@ Not blockers for our fork (we don't enforce them), but they would block any
 attempt to upstream our extensions to TurboWarp/extensions:master. Worth a
 focused cleanup pass before considering an upstream PR.
 
+---
+
+## Desktop CI: a YAML colon-in-step-name that masquerades as a parser cache bug (2026-05-03)
+
+**Symptom (and what made this a multi-hour rathole):**
+
+`gh workflow list` showed two of three desktop workflows with their *file
+path* as the workflow name (`.github/workflows/installers.yml` instead of
+`Build (Manual)`). Tag pushes and `workflow_dispatch` calls to those
+workflows registered as runs but completed in seconds with **0 jobs and no
+logs**. Build (Auto) — same install/clone/symlink scaffolding, same repo —
+worked perfectly. We assumed an inherited-from-upstream parser cache bug
+("GitHub re-uses workflow IDs by filename, fork-Actions parsing got stuck")
+and burned hours on workarounds: rename → disable/re-enable → ASCII-only
+YAML → force re-parse via push trigger → fresh filenames never seen
+upstream. None worked. The fresh `installers.yml` (workflow id created
+*today*, never existed in upstream's history) hit the same symptom, which
+should have been the tell.
+
+**Actual cause:**
+
+Step names like
+
+```yaml
+- name: Clone CrispStrobe/extensions sibling (D: drive)
+```
+
+contain `: ` (colon-space) inside an unquoted plain YAML scalar. js-yaml
+flags it cleanly:
+
+```
+bad indentation of a mapping entry (152:52)
+```
+
+GitHub's parser silently accepts the file enough to register the workflow
+metadata but cannot extract the `jobs:` block, so the workflow is "active"
+but unrunnable. The path-as-name + 0-jobs + no-logs trifecta is GitHub's
+*characteristic* signal that the workflow body failed structural parsing —
+not a sign of a stuck cache. (`Build (Auto)` was unaffected because its
+linux-only steps don't have `(D: drive)` annotations.)
+
+**Fix** (commit `e237c6c` on `CrispStrobe/turbowarp-desktop`): drop
+` (D: drive)` from five step names per file. The
+`working-directory: D:\…` line below each step already documents the drive,
+so the annotation was redundant. Three runs spawned three jobs each
+immediately after the push — `Build (Manual)` via `workflow_dispatch`,
+`Release` via tag push `v0.1.0-crisp.2`.
+
+**Rule for next time:** if a workflow shows path-as-name + 0 jobs + empty
+logs, do **not** rename, force re-parse, or assume a platform bug. Run
+
+```bash
+node -e "require('js-yaml').load(require('fs').readFileSync('PATH','utf8'))"
+```
+
+first. js-yaml emits the offending line:column in 2 seconds. Common
+offenders are step names containing `: ` (drive letters, time annotations,
+clock times, "X: Y" parentheticals) — quote the whole value or remove the
+colon. Save yourself the hours.
+
+
+
+---
+
+## Hardware validation on the brick + three bridge bugs found (2026-05-05)
+
+**Setup:** EV3 brick at `192.168.178.57`, ev3dev (Python 3.5.3 system-wide),
+bridge running from `/home/robot/ev3dev_ondevice.py` via `brickrun`. The
+goal was to validate the four audit-fix categories landed on the
+`wip-pre-collapse` branch end-to-end against real hardware before porting
+them into the gallery.
+
+### Validation result: 44/44 PASS
+
+Wrote `audit_smoke.py` reproducing the **exact** Python the WIP transpiler
+emits (`_list_index`, `_list_delete`, `_list_insert`, `_list_replace`,
+`_list_item`, `_list_itemnum`, `_list_contains`, `_list_length`,
+`_list_contents`, plus `int(math.floor(float(x) + 0.5))` for round, plus
+`math.sin(math.radians(x))` for trig, plus the procedure-as-Python-def
+pattern with `arg_<sanitized>` parameters, plus the `wait_until` /
+`repeat_until` busy-loop with `time.sleep(0.01)` yield) and uploaded it via
+the bridge's `upload_script` + `run_script` cmds. Every assertion passed,
+including the cases that distinguish Scratch's actual round semantics
+(`floor(x+0.5)` ≠ Python's banker's `round()`) from the obvious wrong
+answer.
+
+This is the hardware validation the audit was waiting on. The four
+transpilers on `wip-pre-collapse` are now confirmed-correct at the
+emitted-Python-pattern level for ev3dev. (Spike's MicroPython needs the
+same exercise on real Spike hardware; that's still deferred.)
+
+### Three bridge bugs, all fixed in v2.3.1
+
+The first iteration of the smoke test surfaced a chain of
+ev3dev/Python-3.5/locale issues in the bridge that have lived there since
+day one:
+
+1. **f-strings throughout `ev3dev_ondevice.py`.** 64 of them. The brick
+   runs Python 3.5.3 system-wide; f-strings became syntax in 3.6. The most
+   recent local copy of the bridge had been written assuming 3.6+. It would
+   have failed to start on every brick out there the moment somebody
+   restarted the service (e.g. after a reboot). The currently-running copy
+   on the user's brick was an *earlier* in-memory version that pre-dated
+   the f-string conversion; the file on disk wouldn't restart.
+   **Fix:** AST-based JoinedStr → `.format()` rewrite (custom ~120 LOC
+   tool, since `f2format`'s minimum target is Python 3.6). All 64 sites
+   converted; `py_compile` clean on the brick.
+2. **`upload_script` ASCII codec crash on non-ASCII bodies.** The bridge
+   opens the destination file with the default platform encoding and on
+   the brick that's ASCII (locale=C), so any em-dash or arrow in the
+   payload crashes the upload with `'ascii' codec can't encode character
+   '—' in position 43`. **Fix:** `open(filepath, "w",
+   encoding="utf-8")`.
+3. **`generate_self_signed_cert` instruction-log unicode crash.** The
+   post-success help text contains literal `→` arrows (e.g. `log("  6.
+   Double-click → Trust → 'Always Trust'")`). Under locale=C, `print()` to
+   a redirected stdout raises `UnicodeEncodeError`, which gets caught by
+   the function's outer try/except and returned as **failure** — even
+   though the cert *had* been generated correctly on disk. The bridge then
+   logs `Cannot start HTTPS without certificates` and *binds port 8443
+   without an SSL context*. Browsers see a valid TCP listener but a broken
+   handshake → `(null)` status / "CORS request did not succeed".
+
+   This bug is the actual reason Safari (strict) couldn't connect on 8443
+   while Firefox (with its lenient Local Network Access prompt) only
+   worked on 8080. Cert validity, IP mismatch, etc. were red herrings
+   downstream of this.
+
+   **Fix:** replace the `→` characters with `->` in the three log strings,
+   and set `PYTHONIOENCODING=utf-8` in the launcher as belt-and-suspenders
+   for any other non-ASCII output we missed.
+
+### Cert-IP mismatch (separate, easier issue)
+
+The brick's old self-signed cert was minted when its DHCP lease was at
+`192.168.178.50` (`CN=192.168.178.50`, SAN had only `.50`). Now at `.57`,
+strict cert validation fails — Safari refuses, Firefox falls back to
+mixed-content HTTP via Local Network Access. Bridge keeps the existing
+cert if `openssl x509 -noout` passes, regardless of whether the IP still
+matches. **Fix:** delete `/home/robot/ev3.{crt,key}` then restart so the
+bridge regenerates with the current IP. New cert has SAN
+`IP:192.168.178.57, DNS:ev3dev, DNS:localhost, DNS:ev3dev.local`.
+
+A nice future improvement would be to make `generate_self_signed_cert`
+re-mint when the current `socket.gethostbyname(socket.gethostname())`
+isn't in the cert's SAN; today it only checks structural validity.
+
+### Other cosmetic findings
+
+- `running_scripts` dict isn't reaped when the subprocess exits. The
+  smoke test, hello.py, and earlier zombies all linger in `/scripts`
+  with growing `runtime` values forever. Doesn't affect correctness
+  (file-on-disk + log file are still readable) but the dashboard count
+  is wrong and `stop_all_scripts` walks dead entries.
+- Bridge writes its log via `print()` to a redirected stdout, which is
+  block-buffered (8 KB chunks). Until it accumulates enough output, the
+  log file stays empty even if errors are happening. **Mitigation today:**
+  launch with `python3 -u`. **Better:** pass `flush=True` on every
+  `print(...)` in the bridge's `log()` helpers, or open the file with
+  line buffering.
+
+### Version bump
+
+Per user request, the patched bridge identifies as `"version": "2.3.1"` so
+running bricks can be told apart from the stock 2.3.0 build. The version
+constant is in the `/status` JSON literal — not a top-level constant — so
+there's only one site to bump.
+
+### What still wants doing
+
+- Land the bridge fixes (1)–(3) in the repo (not just on the brick).
+- The cert-IP-mismatch heuristic in (`generate_self_signed_cert`).
+- A Python 3.5 lint job in CI to catch f-string regressions (the existing
+  ruff job runs on a 3.10+ runner so happily ignores them).
+- Hardware validation for the Spike Prime / NXT / LMS audit fixes.

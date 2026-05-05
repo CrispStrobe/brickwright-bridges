@@ -11,6 +11,12 @@ ignore = [
     "B008",  # function call in argument default — pre-existing pattern
 ]
 
+[tool.ruff.lint.per-file-ignores]
+# `ev3dev_ondevice.py` runs on the EV3 brick, which ships Python 3.5.3 —
+# f-strings (UP032) and other "use the new syntax" upgrades (UP*) would
+# break the bridge on every brick out there. Keep this file 3.5-compatible.
+"ev3dev_ondevice.py" = ["UP"]
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"

@@ -158,18 +158,18 @@ def vlog(message, data=None):
     if VERBOSE:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
         if data:
-            print(f"[{timestamp}] [BRIDGE] {message}: {data}")
+            print("[{}] [BRIDGE] {}: {}".format(timestamp, message, data))
         else:
-            print(f"[{timestamp}] [BRIDGE] {message}")
+            print("[{}] [BRIDGE] {}".format(timestamp, message))
 
 
 def log(message, data=None):
     """Standard logging"""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     if data:
-        print(f"[{timestamp}] {message}: {data}")
+        print("[{}] {}: {}".format(timestamp, message, data))
     else:
-        print(f"[{timestamp}] {message}")
+        print("[{}] {}".format(timestamp, message))
 
 
 # ============================================================================
@@ -286,7 +286,7 @@ class ScriptManager:
             )
 
             # Create log file in /tmp
-            log_file = f"/tmp/ev3_script_{script_id}.log"
+            log_file = "/tmp/ev3_script_{}.log".format(script_id)
 
             # Open log file
             log_fd = open(log_file, "w", buffering=1)  # Line buffered
@@ -693,7 +693,7 @@ class ScriptManager:
         with script_lock:
             if script_id not in running_scripts:
                 # Try to read log file even if script stopped
-                log_file = f"/tmp/ev3_script_{script_id}.log"
+                log_file = "/tmp/ev3_script_{}.log".format(script_id)
                 if not os.path.exists(log_file):
                     return []
             else:
@@ -778,7 +778,7 @@ def get_motor(port_char):
                     return motor
             except Exception:
                 pass
-            log(f"Motor {port_char} disconnected")
+            log("Motor {} disconnected".format(port_char))
             motors[port_char] = None
 
     try:
@@ -799,7 +799,7 @@ def get_motor(port_char):
             )
         )
     except Exception as e:
-        log(f"Motor init failed: {str(e)}")
+        log("Motor init failed: {}".format(str(e)))
         motors[port_char] = None
 
     return motors[port_char]
@@ -813,10 +813,10 @@ def get_medium_motor(port_char):
         try:
             mapping = {"A": OUTPUT_A, "B": OUTPUT_B, "C": OUTPUT_C, "D": OUTPUT_D}
             motors[key] = MediumMotor(mapping[port_char])
-            log(f"Medium motor initialized on port {port_char}")
+            log("Medium motor initialized on port {}".format(port_char))
         except Exception as e:
             log(
-                f"Failed to initialize medium motor on port {port_char}",
+                "Failed to initialize medium motor on port {}".format(port_char),
                 str(e),
             )
             if VERBOSE:
@@ -832,7 +832,7 @@ def get_servo_motor(port_char):
         try:
             mapping = {"A": OUTPUT_A, "B": OUTPUT_B, "C": OUTPUT_C, "D": OUTPUT_D}
             motors[key] = ServoMotor(mapping[port_char])
-            log(f"Servo motor initialized on port {port_char}")
+            log("Servo motor initialized on port {}".format(port_char))
         except Exception as e:
             log("Servo motor init failed", str(e))
             motors[key] = None
@@ -846,7 +846,7 @@ def get_dc_motor(port_char):
         try:
             mapping = {"A": OUTPUT_A, "B": OUTPUT_B, "C": OUTPUT_C, "D": OUTPUT_D}
             motors[key] = DcMotor(mapping[port_char])
-            log(f"DC motor initialized on port {port_char}")
+            log("DC motor initialized on port {}".format(port_char))
         except Exception as e:
             log("DC motor init failed", str(e))
             motors[key] = None
@@ -855,7 +855,7 @@ def get_dc_motor(port_char):
 
 def get_sensor(port, sensor_type):
     """Get or create sensor on specified port"""
-    key = f"{port}_{sensor_type}"
+    key = "{}_{}".format(port, sensor_type)
     if key not in sensors:
         port_map = {"1": INPUT_1, "2": INPUT_2, "3": INPUT_3, "4": INPUT_4}
         sensor_classes = {
@@ -889,7 +889,7 @@ def get_sensor(port, sensor_type):
             elif sensor_type == "light":
                 sensor.mode = "REFLECT"  # Reflected light mode
 
-            log(f"Initialized {sensor_type} sensor on port {port}")
+            log("Initialized {} sensor on port {}".format(sensor_type, port))
         except Exception as e:
             log("Sensor init failed", str(e))
             sensors[key] = None
@@ -941,7 +941,7 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
             return True
 
         # Auth failed
-        log(f"Authentication failed from {self.client_address[0]}")
+        log("Authentication failed from {}".format(self.client_address[0]))
         self._send_json({"status": "error", "msg": "Unauthorized"}, 401)
         return False
 
@@ -953,7 +953,9 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
             conn_id = connection_counter
 
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-        log_msg = f"[{timestamp}] [HTTP] [{conn_id}] {self.command} {self.path} from {self.client_address[0]}"
+        log_msg = "[{}] [HTTP] [{}] {} {} from {}".format(
+            timestamp, conn_id, self.command, self.path, self.client_address[0]
+        )
         print(log_msg)
 
     def end_headers(self):
@@ -1003,7 +1005,7 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
             data = json.loads(post_data.decode("utf-8"))
             command = data.get("cmd")
 
-            log(f"Command: {command}")
+            log("Command: {}".format(command))
 
             # === SCRIPT MANAGEMENT ===
             if command == "upload_script":
@@ -1025,7 +1027,7 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                 filepath = os.path.join(SCRIPTS_DIR, filename)
 
                 # Write script
-                with open(filepath, "w") as f:
+                with open(filepath, "w", encoding="utf-8") as f:
                     # Ensure shebang
                     if not code.startswith("#!"):
                         f.write("#!/usr/bin/env python3\n")
@@ -1169,23 +1171,23 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                         time.sleep(0.1)
                         # 3. Force the specific device driver
                         p.set_device = "lego-nxt-touch"
-                        vlog(f"Configured Port {port_num} for NXT Touch")
+                        vlog("Configured Port {} for NXT Touch".format(port_num))
 
                     elif device_type == "lego-nxt-light":
                         p.mode = "nxt-analog"
                         time.sleep(0.1)
                         p.set_device = "lego-nxt-light"
-                        vlog(f"Configured Port {port_num} for NXT Light")
+                        vlog("Configured Port {} for NXT Light".format(port_num))
 
                     elif device_type == "lego-nxt-sound":
                         p.mode = "nxt-analog"
                         time.sleep(0.1)
                         p.set_device = "lego-nxt-sound"
-                        vlog(f"Configured Port {port_num} for NXT Sound")
+                        vlog("Configured Port {} for NXT Sound".format(port_num))
 
                     elif device_type == "reset":
                         p.mode = "auto"
-                        vlog(f"Reset Port {port_num} to Auto")
+                        vlog("Reset Port {} to Auto".format(port_num))
 
                     # Give the kernel a moment to load the driver before returning
                     time.sleep(0.5)
@@ -1193,7 +1195,7 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
 
                 except Exception as e:
                     # Log the specific error for debugging
-                    log(f"Port config failed for {address}: {str(e)}")
+                    log("Port config failed for {}: {}".format(address, str(e)))
                     self._send_json({"status": "error", "msg": str(e)})
 
             # === MOTORS ===
@@ -1795,7 +1797,7 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"status": "ok"})
 
             else:
-                log(f"Unknown command: {command}")
+                log("Unknown command: {}".format(command))
                 self._send_json({"status": "error", "msg": "Unknown command"}, 400)
 
         except Exception as e:
@@ -1817,7 +1819,7 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
             if self.path == "/" or self.path == "/status":
                 status = {
                     "status": "ev3_bridge_active",
-                    "version": "2.3.0",
+                    "version": "2.3.1",
                     "running_scripts": len(running_scripts),
                     "available_scripts": len(script_list),
                     "motors": list(motors.keys()),
@@ -2142,7 +2144,7 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
 
             elif self.path == "/profile" or self.path == "/ev3.mobileconfig":
                 """Generate iOS configuration profile with embedded certificate"""
-                log(f"iOS profile requested by {self.client_address[0]}")
+                log("iOS profile requested by {}".format(self.client_address[0]))
 
                 try:
                     import socket
@@ -2163,7 +2165,7 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                     local_ip = socket.gethostbyname(hostname)
 
                     # Create configuration profile
-                    profile = f"""<?xml version="1.0" encoding="UTF-8"?>
+                    profile = """<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -2174,42 +2176,50 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
             <string>ev3-robot.crt</string>
             <key>PayloadContent</key>
             <data>
-{cert_b64}
+{}
             </data>
             <key>PayloadDescription</key>
             <string>EV3 Robot SSL Certificate - Allows secure HTTPS connection to your EV3</string>
             <key>PayloadDisplayName</key>
             <string>EV3 Robot Certificate</string>
             <key>PayloadIdentifier</key>
-            <string>com.ev3dev.cert.{cert_uuid}</string>
+            <string>com.ev3dev.cert.{}</string>
             <key>PayloadType</key>
             <string>com.apple.security.root</string>
             <key>PayloadUUID</key>
-            <string>{cert_uuid}</string>
+            <string>{}</string>
             <key>PayloadVersion</key>
             <integer>1</integer>
         </dict>
     </array>
     <key>PayloadDescription</key>
-    <string>Install this profile to trust the EV3 Robot HTTPS certificate. This allows secure connection to your EV3 at {local_ip}</string>
+    <string>Install this profile to trust the EV3 Robot HTTPS certificate. This allows secure connection to your EV3 at {}</string>
     <key>PayloadDisplayName</key>
-    <string>EV3 Robot ({local_ip})</string>
+    <string>EV3 Robot ({})</string>
     <key>PayloadIdentifier</key>
-    <string>com.ev3dev.profile.{profile_uuid}</string>
+    <string>com.ev3dev.profile.{}</string>
     <key>PayloadRemovalDisallowed</key>
     <false/>
     <key>PayloadType</key>
     <string>Configuration</string>
     <key>PayloadUUID</key>
-    <string>{profile_uuid}</string>
+    <string>{}</string>
     <key>PayloadVersion</key>
     <integer>1</integer>
 </dict>
-</plist>"""
+</plist>""".format(
+                        cert_b64,
+                        cert_uuid,
+                        cert_uuid,
+                        local_ip,
+                        local_ip,
+                        profile_uuid,
+                        profile_uuid,
+                    )
 
                     profile_bytes = profile.encode("utf-8")
 
-                    log(f"Sending iOS profile ({len(profile_bytes)} bytes)")
+                    log("Sending iOS profile ({} bytes)".format(len(profile_bytes)))
 
                     self.send_response(200)
                     self.send_header("Content-Type", "application/x-apple-aspen-config")
@@ -2221,10 +2231,14 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                     self.end_headers()
                     self.wfile.write(profile_bytes)
 
-                    log(f"iOS profile sent successfully to {self.client_address[0]}")
+                    log(
+                        "iOS profile sent successfully to {}".format(
+                            self.client_address[0]
+                        )
+                    )
 
                 except Exception as e:
-                    log(f"Profile generation error: {str(e)}")
+                    log("Profile generation error: {}".format(str(e)))
                     if VERBOSE:
                         traceback.print_exc()
                     self._send_json({"status": "error", "msg": str(e)}, 500)
@@ -2232,7 +2246,11 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
             # === CERTIFICATE DOWNLOAD ===
             elif self.path == "/certificate" or self.path == "/ev3.crt":
                 """Serve certificate file for iOS/macOS installation"""
-                log(f"Certificate download requested by {self.client_address[0]}")
+                log(
+                    "Certificate download requested by {}".format(
+                        self.client_address[0]
+                    )
+                )
 
                 try:
                     cert_path = os.path.join(os.getcwd(), SSL_CERT)
@@ -2241,13 +2259,13 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                         cert_path = SSL_CERT
 
                     if not os.path.exists(cert_path):
-                        log(f"Certificate file not found: {cert_path}")
+                        log("Certificate file not found: {}".format(cert_path))
                         self._send_json(
                             {"status": "error", "msg": "Certificate not found"}, 404
                         )
                         return
 
-                    log(f"Reading certificate from: {cert_path}")
+                    log("Reading certificate from: {}".format(cert_path))
 
                     with open(cert_path, "rb") as f:
                         cert_data = f.read()
@@ -2262,7 +2280,7 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                         )
                         return
 
-                    log(f"Sending certificate ({len(cert_data)} bytes)")
+                    log("Sending certificate ({} bytes)".format(len(cert_data)))
 
                     self.send_response(200)
                     # Use proper MIME type for certificates
@@ -2275,10 +2293,14 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                     self.end_headers()
                     self.wfile.write(cert_data)
 
-                    log(f"Certificate sent successfully to {self.client_address[0]}")
+                    log(
+                        "Certificate sent successfully to {}".format(
+                            self.client_address[0]
+                        )
+                    )
 
                 except Exception as e:
-                    log(f"Certificate download error: {str(e)}")
+                    log("Certificate download error: {}".format(str(e)))
                     if VERBOSE:
                         traceback.print_exc()
                     self._send_json({"status": "error", "msg": str(e)}, 500)
@@ -2342,7 +2364,7 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(html.encode())))
                 self.end_headers()
                 self.wfile.write(html.encode())
-                log(f"Test page served to {self.client_address[0]}")
+                log("Test page served to {}".format(self.client_address[0]))
 
             else:
                 self._send_json({"status": "error", "msg": "Unknown endpoint"}, 404)
@@ -2431,9 +2453,9 @@ def draw_status_screen():
     display.text_pixels("=" * 26, x=2, y=15)
 
     # Connection info
-    display.text_pixels(f"Port: {PORT}", x=5, y=25)
-    display.text_pixels(f"Scripts: {len(script_list)}", x=5, y=40)
-    display.text_pixels(f"Running: {len(running_scripts)}", x=5, y=55)
+    display.text_pixels("Port: {}".format(PORT), x=5, y=25)
+    display.text_pixels("Scripts: {}".format(len(script_list)), x=5, y=40)
+    display.text_pixels("Running: {}".format(len(running_scripts)), x=5, y=55)
 
     # Show running script names
     if running_scripts:
@@ -2449,7 +2471,9 @@ def draw_status_screen():
     try:
         voltage = power.measured_volts
         percentage = max(0, min(100, ((voltage - 7.4) / (9.0 - 7.4)) * 100))
-        display.text_pixels(f"Battery: {voltage:.1f}V ({percentage:.0f}%)", x=5, y=105)
+        display.text_pixels(
+            "Battery: {:.1f}V ({:.0f}%)".format(voltage, percentage), x=5, y=105
+        )
     except Exception:
         pass
 
@@ -2593,7 +2617,7 @@ def generate_self_signed_cert(cert_file="ev3.crt", key_file="ev3.key"):
             stdout, stderr = result.communicate()
 
             if result.returncode == 0:
-                log(f"Using existing valid certificate: {cert_file}")
+                log("Using existing valid certificate: {}".format(cert_file))
                 return True
             else:
                 log("Existing certificate is invalid, regenerating...")
@@ -2609,12 +2633,12 @@ def generate_self_signed_cert(cert_file="ev3.crt", key_file="ev3.key"):
         local_ip = socket.gethostbyname(hostname)
 
         log("Generating SSL certificate for macOS/iOS compatibility...")
-        log(f"IP Address: {local_ip}")
-        log(f"Hostname: {hostname}")
+        log("IP Address: {}".format(local_ip))
+        log("Hostname: {}".format(hostname))
 
         # Create OpenSSL config file with proper extensions
         config_file = "/tmp/ev3_openssl.cnf"
-        config_content = f"""[req]
+        config_content = """[req]
 default_bits = 2048
 prompt = no
 default_md = sha256
@@ -2628,7 +2652,7 @@ ST = State
 L = City
 O = EV3 Robot
 OU = EV3dev
-CN = {local_ip}
+CN = {}
 
 [v3_req]
 basicConstraints = CA:FALSE
@@ -2641,17 +2665,19 @@ keyUsage = nonRepudiation, digitalSignature, keyEncipherment
 subjectAltName = @alt_names
 
 [alt_names]
-IP.1 = {local_ip}
-DNS.1 = {hostname}
+IP.1 = {}
+DNS.1 = {}
 DNS.2 = localhost
 DNS.3 = ev3dev.local
 DNS.4 = ev3dev
-"""
+""".format(
+            local_ip, local_ip, hostname
+        )
 
         with open(config_file, "w") as f:
             f.write(config_content)
 
-        log(f"OpenSSL config created: {config_file}")
+        log("OpenSSL config created: {}".format(config_file))
 
         # Generate the certificate
         cmd = [
@@ -2697,17 +2723,17 @@ DNS.4 = ev3dev
             log("=" * 60)
             log("")
             log("macOS:")
-            log(f"  1. Download: https://{local_ip}:8443/certificate")
+            log("  1. Download: https://{}:8443/certificate".format(local_ip))
             log("  2. Double-click ev3.crt")
             log("  3. Select 'System' keychain (requires admin password)")
             log("  4. Click 'Add'")
             log("  5. Find 'EV3 Robot' certificate in Keychain Access")
-            log("  6. Double-click → Trust → 'Always Trust'")
+            log("  6. Double-click -> Trust -> 'Always Trust'")
             log("")
             log("iOS:")
-            log(f"  1. Safari: https://{local_ip}:8443/certificate")
-            log("  2. Settings → Profile Downloaded → Install")
-            log("  3. Settings → General → About → Certificate Trust Settings")
+            log("  1. Safari: https://{}:8443/certificate".format(local_ip))
+            log("  2. Settings -> Profile Downloaded -> Install")
+            log("  3. Settings -> General -> About -> Certificate Trust Settings")
             log("  4. Enable the EV3 certificate")
             log("")
             log("=" * 60)
@@ -2720,7 +2746,7 @@ DNS.4 = ev3dev
             return False
 
     except Exception as e:
-        log(f"Certificate generation failed: {str(e)}")
+        log("Certificate generation failed: {}".format(str(e)))
         if VERBOSE:
             traceback.print_exc()
         return False
@@ -2731,14 +2757,14 @@ def run_server_on_port(port, use_ssl=False):
     global connection_counter
 
     protocol = "HTTPS" if use_ssl else "HTTP"
-    log(f"Initializing {protocol} server on port {port}...")
+    log("Initializing {} server on port {}...".format(protocol, port))
 
     try:
         socketserver.TCPServer.allow_reuse_address = True
         server = socketserver.TCPServer(("", port), BridgeHandler)
         server.allow_reuse_address = True
 
-        log(f"{protocol} socket created on port {port}")
+        log("{} socket created on port {}".format(protocol, port))
 
         if use_ssl:
             if not generate_self_signed_cert(SSL_CERT, SSL_KEY):
@@ -2750,8 +2776,8 @@ def run_server_on_port(port, use_ssl=False):
                 return
 
             log("Certificate files verified:")
-            log(f"  - Cert: {SSL_CERT} ({os.path.getsize(SSL_CERT)} bytes)")
-            log(f"  - Key:  {SSL_KEY} ({os.path.getsize(SSL_KEY)} bytes)")
+            log("  - Cert: {} ({} bytes)".format(SSL_CERT, os.path.getsize(SSL_CERT)))
+            log("  - Key:  {} ({} bytes)".format(SSL_KEY, os.path.getsize(SSL_KEY)))
 
             try:
                 context = ssl.SSLContext(ssl.PROTOCOL_TLS)
@@ -2772,7 +2798,7 @@ def run_server_on_port(port, use_ssl=False):
                 log("SSL configured successfully")
 
             except Exception as e:
-                log(f"SSL setup failed: {str(e)}")
+                log("SSL setup failed: {}".format(str(e)))
                 if VERBOSE:
                     traceback.print_exc()
                 return
@@ -2786,29 +2812,37 @@ def run_server_on_port(port, use_ssl=False):
                 conn_id = connection_counter
                 connection_counter += 1
 
-            vlog(f"New {protocol} connection #{conn_id} from {client_address[0]}")
+            vlog(
+                "New {} connection #{} from {}".format(
+                    protocol, conn_id, client_address[0]
+                )
+            )
 
             try:
                 original_finish_request(request, client_address)
-                vlog(f"Connection #{conn_id} completed successfully")
+                vlog("Connection #{} completed successfully".format(conn_id))
             except ssl.SSLError as e:
-                log(f"SSL Error on connection #{conn_id}: {str(e)}")
+                log("SSL Error on connection #{}: {}".format(conn_id, str(e)))
                 if VERBOSE:
                     traceback.print_exc()
             except Exception as e:
-                log(f"Error on connection #{conn_id}: {str(e)}")
+                log("Error on connection #{}: {}".format(conn_id, str(e)))
                 if VERBOSE:
                     traceback.print_exc()
 
         server.finish_request = tracked_finish_request
 
-        log(f"{protocol} server ready on port {port} - accepting connections...")
+        log(
+            "{} server ready on port {} - accepting connections...".format(
+                protocol, port
+            )
+        )
         server.serve_forever()
 
     except KeyboardInterrupt:
-        log(f"{protocol} server shutting down...")
+        log("{} server shutting down...".format(protocol))
     except Exception as e:
-        log(f"{protocol} server error: {str(e)}")
+        log("{} server error: {}".format(protocol, str(e)))
         if VERBOSE:
             traceback.print_exc()
 
@@ -2875,7 +2909,7 @@ def main():
             try:
                 script_manager.scan_scripts()
             except Exception as e:
-                log(f"Script scanner error: {str(e)}")
+                log("Script scanner error: {}".format(str(e)))
             time.sleep(2)
 
     scanner_thread = threading.Thread(target=script_scanner, daemon=True)
@@ -2892,7 +2926,7 @@ def main():
 
     # Start HTTP server
     if start_http:
-        log(f"Starting HTTP server thread on port {http_port}...")
+        log("Starting HTTP server thread on port {}...".format(http_port))
         http_thread = threading.Thread(
             target=run_server_on_port, args=(http_port, False), daemon=True
         )
@@ -2901,7 +2935,7 @@ def main():
 
     # Start HTTPS server
     if start_https:
-        log(f"Starting HTTPS server thread on port {https_port}...")
+        log("Starting HTTPS server thread on port {}...".format(https_port))
         https_thread = threading.Thread(
             target=run_server_on_port, args=(https_port, True), daemon=True
         )
@@ -2912,10 +2946,10 @@ def main():
     log("EV3 Bridge Server Ready!")
     log("=" * 60)
     if start_http:
-        log(f"HTTP:  http://{local_ip}:{http_port}/test.html")
+        log("HTTP:  http://{}:{}/test.html".format(local_ip, http_port))
         log("       (Use this for Safari, iOS, all browsers)")
     if start_https:
-        log(f"HTTPS: https://{local_ip}:{https_port}/test.html")
+        log("HTTPS: https://{}:{}/test.html".format(local_ip, https_port))
         log("       (For curl, Firefox, apps with cert installed)")
     log("=" * 60)
     log("")
