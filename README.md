@@ -1,4 +1,4 @@
-# turbowarp-lego
+# brickwright-lego
 
 Python bridges, protocol notes, and setup guides for the TurboWarp/Scratch
 extensions that talk to LEGO bricks (NXT, EV3, Boost, Spike Prime, WeDo 2.0,
@@ -10,7 +10,7 @@ The extension `.js` files themselves live in
 They used to be mirrored here but were collapsed on **2026-05-02** to stop
 drift; this repo now holds the **on-device Python bridges** and **protocol
 docs** only. The four transpilers' Phase 2 + Phase 4 audit fixes live on
-the [`wip-pre-collapse`](https://github.com/CrispStrobe/turbowarp-lego/tree/wip-pre-collapse)
+the [`wip-pre-collapse`](https://github.com/CrispStrobe/brickwright-lego/tree/wip-pre-collapse)
 branch — **hardware-validated for ev3dev** as of 2026-05-05 (44/44
 smoke-test cases pass on a real brick); Spike/NXT/LMS hardware checks
 deferred. See [`LEARNINGS.md`](./LEARNINGS.md) for the full picture.
@@ -29,18 +29,18 @@ Pick your brick + platform, then jump straight to the matching guide.
 |---|---|---|---|
 | **EV3 with ev3dev firmware** | Any browser on any OS | Bridge running on the brick | [§ EV3dev quick start](#ev3dev-quick-start-the-90-second-version) ↓ |
 | **EV3 with original firmware** | macOS/Win Chrome/Edge | LEGO ScratchLink (BTC) | [§ EV3 (LEGO firmware)](#ev3-original-firmware) ↓ |
-| **EV3 with original firmware** | iOS / Android | Native shell (turbowarp-ios, Scrub) | [`turbowarp-ios`](https://github.com/CrispStrobe/turbowarp-ios) / [Scrub](https://github.com/bricklife/Scrub) |
+| **EV3 with original firmware** | iOS / Android | Native shell (brickwright-ios, Scrub) | [`brickwright-ios`](https://github.com/CrispStrobe/brickwright-ios) / [Scrub](https://github.com/bricklife/Scrub) |
 | **NXT** | macOS/Win + browser | Pair via OS, run `nxt_bridge.py` | [§ NXT setup](#nxt-setup) ↓ |
 | **NXT** | TurboWarp Desktop on Mac/Win | Web Serial via `legonxt_transpile_universal.js` | [§ NXT setup](#nxt-setup) ↓ |
 | **Spike Prime FW 2.x** | macOS/Win Chrome | LEGO ScratchLink (BTC) | [`extensions` gallery](https://github.com/CrispStrobe/extensions/tree/main/extensions/CrispStrobe) — `legospike*.js` |
 | **Spike Prime FW 3.x** | macOS/Win Chrome | Web Bluetooth (no bridge) | gallery — `legospike*.js` |
 | **Boost / Powered UP / Technic Hub** | macOS/Win Chrome | Web Bluetooth (no bridge) | gallery — `legoboost_universal.js`, `lego_poweredup.js` |
 | **WeDo 2.0** | macOS/Win Chrome | Web Bluetooth (no bridge) | gallery — `lego_wedo2_universal.js` |
-| **Spike Prime / EV3 / NXT on iOS/iPad** | turbowarp-ios or Scrub | Native shell + (for HTTPS) cert install | [`turbowarp-ios`](https://github.com/CrispStrobe/turbowarp-ios) — see [iOS notes](#ios--ipad-notes) ↓ |
+| **Spike Prime / EV3 / NXT on iOS/iPad** | brickwright-ios or Scrub | Native shell + (for HTTPS) cert install | [`brickwright-ios`](https://github.com/CrispStrobe/brickwright-ios) — see [iOS notes](#ios--ipad-notes) ↓ |
 
 The TurboWarp editor is at [`scratch-gui-three.vercel.app/editor.html`](https://scratch-gui-three.vercel.app/editor.html)
 (fork of TurboWarp that loads `CrispStrobe/extensions`). On macOS/Windows
-desktops you can use [TurboWarp Desktop](https://github.com/CrispStrobe/turbowarp-desktop)
+desktops you can use [TurboWarp Desktop](https://github.com/CrispStrobe/brickwright-desktop)
 instead.
 
 ---
@@ -92,9 +92,9 @@ locale crash on a fresh start. Update from this repo and restart with
 |------|-------------|
 | [`CrispStrobe/extensions`](https://github.com/CrispStrobe/extensions) | Extension gallery — the `.js` files for the editor. **The maintained EV3/NXT/Spike code lives here.** |
 | [`CrispStrobe/scratch-gui`](https://github.com/CrispStrobe/scratch-gui) | TurboWarp editor fork that loads the gallery above |
-| [`CrispStrobe/turbowarp-desktop`](https://github.com/CrispStrobe/turbowarp-desktop) | Electron build of the editor for macOS / Windows / Linux |
-| [`CrispStrobe/turbowarp-android`](https://github.com/CrispStrobe/turbowarp-android) | Android wrapper with native Bluetooth bridges |
-| [`CrispStrobe/turbowarp-ios`](https://github.com/CrispStrobe/turbowarp-ios) | iOS / iPadOS wrapper with native Bluetooth bridges |
+| [`CrispStrobe/brickwright-desktop`](https://github.com/CrispStrobe/brickwright-desktop) | Electron build of the editor for macOS / Windows / Linux |
+| [`CrispStrobe/brickwright-android`](https://github.com/CrispStrobe/brickwright-android) | Android wrapper with native Bluetooth bridges |
+| [`CrispStrobe/brickwright-ios`](https://github.com/CrispStrobe/brickwright-ios) | iOS / iPadOS wrapper with native Bluetooth bridges |
 | [`CrispStrobe/legacy-lego-compiler`](https://github.com/CrispStrobe/legacy-lego-compiler) | Hosted REST API that compiles NXC → `.rxe` and lmsasm → EV3 bytecode (used by the transpile extensions) |
 | [`CrispStrobe/scratch-lego-bluetooth-extensions`](https://github.com/CrispStrobe/scratch-lego-bluetooth-extensions) | Older Xcratch-style `.mjs` build of the LEGO extensions (feature-frozen) |
 
@@ -131,7 +131,7 @@ locale crash on a fresh start. Update from this repo and restart with
 - **macOS / Windows desktop browsers:** Web Bluetooth and Web Serial work in Chrome/Edge. ScratchLink-mode extensions need [LEGO ScratchLink](https://scratch.mit.edu/scratchlink/) installed.
 - **macOS Safari:** strict TLS — see [iOS notes](#ios--ipad-notes) for cert install (the procedure is the same for Mac Safari and iPad Safari).
 - **macOS Firefox:** has its own trust store (independent of Keychain). Either import the cert into Firefox's certificate manager, or stay on HTTP via "Local Network Access" (Firefox now prompts for that).
-- **iOS / iPadOS:** Web BT / Web Serial don't exist on iOS. The only path is a Scratch-Link-emulating native shell — try [Scrub](https://github.com/bricklife/Scrub), or use [`turbowarp-ios`](https://github.com/CrispStrobe/turbowarp-ios) which has native BLE/BTC bridges built in.
+- **iOS / iPadOS:** Web BT / Web Serial don't exist on iOS. The only path is a Scratch-Link-emulating native shell — try [Scrub](https://github.com/bricklife/Scrub), or use [`brickwright-ios`](https://github.com/CrispStrobe/brickwright-ios) which has native BLE/BTC bridges built in.
 - **Sandbox mode:** must be disabled for any of the hardware extensions.
 
 ---
@@ -261,7 +261,7 @@ vertical pixels per byte, LSB top).
 
 ## iOS / iPad notes
 
-iOS Safari (mobile + iPad) and any WebKit-based shell (turbowarp-ios, Scrub,
+iOS Safari (mobile + iPad) and any WebKit-based shell (brickwright-ios, Scrub,
 in-app webviews) all share **the same TLS trust store**. So one cert install
 on the device makes all of them work simultaneously.
 
@@ -280,7 +280,7 @@ but iOS does **not** trust it for SSL.
 
 ### For App Store submitters: ATS settings
 
-If you fork [`turbowarp-ios`](https://github.com/CrispStrobe/turbowarp-ios)
+If you fork [`brickwright-ios`](https://github.com/CrispStrobe/brickwright-ios)
 and intend to submit to the App Store, **don't** use
 `NSAllowsArbitraryLoads = true` — Apple will scrutinize that and may reject.
 Use the purpose-built local-network exception instead, in `Info.plist`:
