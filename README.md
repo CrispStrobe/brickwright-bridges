@@ -1,4 +1,4 @@
-# brickwright-lego
+# brickwright-bridges
 
 Python bridges, protocol notes, and setup guides for the TurboWarp/Scratch
 extensions that talk to LEGO bricks (NXT, EV3, Boost, Spike Prime, WeDo 2.0,
@@ -10,7 +10,7 @@ The extension `.js` files themselves live in
 They used to be mirrored here but were collapsed on **2026-05-02** to stop
 drift; this repo now holds the **on-device Python bridges** and **protocol
 docs** only. The four transpilers' Phase 2 + Phase 4 audit fixes live on
-the [`wip-pre-collapse`](https://github.com/CrispStrobe/brickwright-lego/tree/wip-pre-collapse)
+the [`wip-pre-collapse`](https://github.com/CrispStrobe/brickwright-bridges/tree/wip-pre-collapse)
 branch — **hardware-validated for ev3dev** as of 2026-05-05 (44/44
 smoke-test cases pass on a real brick); Spike/NXT/LMS hardware checks
 deferred. See [`LEARNINGS.md`](./LEARNINGS.md) for the full picture.
